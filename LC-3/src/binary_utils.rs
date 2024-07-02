@@ -85,11 +85,6 @@ pub fn flag_is_set(word: u16, bit: u16) -> bool {
     isolate_bits_then_shift(word, (bit, bit)) == 1
 }
 
-pub fn _set_flag_true(word: &mut u16, bit: u16) {
-    if !flag_is_set(*word, bit) {
-        *word += 1 << bit;
-    }
-}
 
 pub fn set_flag_true(word: u16, bit: u16) -> u16 {
     if !flag_is_set(word, bit){
@@ -117,8 +112,24 @@ pub fn is_negative(word: u16) -> bool {
     flag_is_set(word, 15)
 }
 
+pub fn as_negative(word: u16) -> i16{
+    if !is_negative(word) {
+        word as i16
+    }else{
+        -((!word + 1) as i16)
+    }
+}
+
 pub fn invert_sign(word: u16) -> u16 {
     word.not() + 1
+}
+
+/// [first][second] -> [second,first]
+pub fn merge_bytes(first: u8, second: u8) -> u16{
+    let first_16bit: u16 = first as u16;
+    let second_16bit: u16 = second as u16;
+
+    (second_16bit << 8) + (first_16bit)
 }
 
 pub fn add_2s_complement(word_1: u16, word_2: u16) -> u16 {
@@ -152,7 +163,7 @@ pub fn add_2s_complement(word_1: u16, word_2: u16) -> u16 {
         }
     }
     //
-    println!("{word_1:016b} + {word_2:016b} = {sum:016b}");
+    //println!("{word_1:016b} + {word_2:016b} = {sum:016b}");
 
     sum
 }
