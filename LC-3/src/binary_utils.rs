@@ -94,6 +94,16 @@ pub fn set_flag_true(word: u16, bit: u16) -> u16 {
     }
 }
 
+pub fn bits_required_for_number(n: u16) -> u16{
+    for i in 0..16{
+        if n >> i == 0{
+            return i;
+        }
+    }
+    panic!("Number out of range.");
+    return 16;
+}
+
 pub fn set_flag_false(word: u16, bit: u16) -> u16 {
     if flag_is_set(word, bit){
        word - (1 << bit)     

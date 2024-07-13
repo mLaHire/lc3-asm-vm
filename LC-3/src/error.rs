@@ -7,6 +7,11 @@ pub enum FileLoadError{
     InvalidBinary,
 }
 
+pub enum AssemblerError{
+    FailureToTokenize,
+    InvalidString,
+}
+
 #[derive(Debug)]
 pub enum VirtualMachineErrorType{
     InvalidOpcode, 

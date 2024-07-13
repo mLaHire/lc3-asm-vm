@@ -10,11 +10,37 @@ pub mod binary_utils;
 pub mod virtual_machine;
 pub mod load_binary;
 pub mod error;
+pub mod assemble;
 
 
 use virtual_machine::{self as vm, PC_START, PC_START_IDX};
 
 fn main() {
+    // let file_contents = assemble::read_asm_file(".\\src\\asm-files\\test2.asm")
+    //     .unwrap();
+
+    // for line in file_contents.iter(){
+    //     println!("{:03} \t {}", line.number + 1, line.text);
+    // }
+    // dbg!(assemble::build_symbol_table(&file_contents));
+
+
+    let mut asm = assemble::Assembler::new(".\\src\\asm-files\\test2.asm");
+    asm.load();
+    asm.tokenize();
+
+    let sentence = "ADD R0, R1, #-255";
+    println!("{:?}", assemble::Token::tokenize_str(sentence));
+
+    let sentence = "ADD R0, R1, x11";
+    println!("{:?}", assemble::Token::tokenize_str(sentence));
+
+    let sentence = "LBL ST R1, SAVE1";
+    println!("{:?}", assemble::Token::tokenize_str(sentence));
+
+
+    return;
+
     let mut machine = vm::VirtualMachine::new();
     // let instr = 0b0001_010_001_1_10111;
     // machine.ld_instr_to_mem(instr, vm::PC_START_IDX);
