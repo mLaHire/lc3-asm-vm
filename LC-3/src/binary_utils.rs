@@ -85,6 +85,9 @@ pub fn flag_is_set(word: u16, bit: u16) -> bool {
     isolate_bits_then_shift(word, (bit, bit)) == 1
 }
 
+pub fn shift_register(value: u16, arg_index: u16, offset: u16) -> u16{
+    value << (offset + 9-3*arg_index)
+}
 
 pub fn set_flag_true(word: u16, bit: u16) -> u16 {
     if !flag_is_set(word, bit){
@@ -206,6 +209,7 @@ pub fn to_i16(word: u16) -> i16 {
 
 pub fn sign_extend(word: u16, most_significant_bit: u16) -> u16 {
     if isolate_bit(word, most_significant_bit) == 0 {
+       // println!("not negative");
         return word;
     }
 
@@ -215,6 +219,14 @@ pub fn sign_extend(word: u16, most_significant_bit: u16) -> u16 {
         extended += 2 << i;
     }
     extended
+}
+
+pub fn truncate_to(word: u16, bits: u16) -> u16{
+    let mut result = word;
+    for i in bits+1..16{
+        result = set_flag_false(result, i);
+    }
+    result
 }
 
 pub mod instructions {

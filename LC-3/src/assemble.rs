@@ -1,15 +1,18 @@
 use crate::binary_utils;
 use crate::binary_utils::flag_set_mask;
 use crate::binary_utils::instructions;
-use core::panic;
-use std::mem::Discriminant;
+use crate::binary_utils::Register;
 use crate::error;
 use crate::virtual_machine;
+use core::panic;
+use std::io::stdin;
+use console::Term;
 use io::BufRead;
 use std::fs::read;
 use std::fs::File;
 use std::io;
 use std::io::BufReader;
+use std::mem::Discriminant;
 
 #[derive(Debug)]
 pub struct Symbol {
@@ -17,17 +20,13 @@ pub struct Symbol {
     offset_from_origin: u16,
 }
 
-#[derive(PartialEq)]
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(PartialEq, Debug, Clone)]
 enum Sign {
     PLUS = 1,
     MINUS = -1,
 }
 
-#[derive(Debug)]
-#[derive(PartialEq)]
-#[derive(Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct NumberLiteral {
     sign: Sign,
     value: u16,
@@ -44,8 +43,7 @@ impl NumberLiteral {
     }
 }
 
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 //#[derive(PartialEq)]
 pub enum Token {
     DecimalLiteral(NumberLiteral),
@@ -59,12 +57,11 @@ pub enum Token {
     Alphabetic_LblRegOrInstr,
 }
 
-impl PartialEq for Token{
+impl PartialEq for Token {
     fn eq(&self, other: &Self) -> bool {
         self.is(other)
     }
 }
-
 
 impl Token {
     pub fn tokenize_str(line: &str) -> Vec<Token> {
@@ -75,40 +72,43 @@ impl Token {
         vec!["BLKW", "FILL", "ORIG", "END", "STRINGZ"].contains(&name)
     }
 
-    pub fn is(&self, other: &Self) -> bool{
+    pub fn is(&self, other: &Self) -> bool {
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }
 
-    pub fn is_valid_arg(&self, param: &Param)-> bool{
-        match self{
-            Self::Comma|Self::Directive(_)|Self::Instruction(_)|Self::StringLiteral(_) => return false,
-            _ => {},
+    pub fn is_valid_arg(&self, param: &Param) -> bool {
+        match self {
+            Self::Comma | Self::Directive(_) | Self::Instruction(_) | Self::StringLiteral(_) => {
+                return false
+            }
+            _ => {}
         };
 
-        match param{
-            Param::Label => {
-                return self.is(&Token::Label(String::new()))
-            },
+        match param {
+            Param::Label => return self.is(&Token::Label(String::new())),
 
-            Param::Register => {
-                return self.is(&Token::Register(0))
-            },
+            Param::Register(_) => return self.is(&Token::Register(0)),
 
-            Param::Bits(bits) => {
-                match self{
-                    Self::DecimalLiteral(number)|Self::HexLiteral(number) => {
-                        return number.bits <= *bits-1;
-                    },
-
-                    _ => return false,
+            Param::Bits(bits) => match self {
+                Self::DecimalLiteral(number) | Self::HexLiteral(number) => {
+                    return number.bits <= *bits - 1;
                 }
+
+                _ => return false,
             },
 
-            Param::Imm5 => panic!("INTERNAL ERROR: \tUnexpected instr to be defined as having imm5."),
+            Param::Imm5 => {
+                panic!("INTERNAL ERROR: \tUnexpected instr to be defined as having imm5.")
+            }
 
             Param::RegisterORImm5 => {
-                return self.is(&Token::Register(0)) || 
-                    match self { Self::DecimalLiteral(number)|Self::HexLiteral(number) => {number.bits <= 5-1}, _ => false};
+                return self.is(&Token::Register(0))
+                    || match self {
+                        Self::DecimalLiteral(number) | Self::HexLiteral(number) => {
+                            number.bits <= 5 - 1
+                        }
+                        _ => false,
+                    };
             }
         }
 
@@ -455,7 +455,6 @@ impl Assembler {
     }
 
     pub fn load(&mut self) {
-        
         let file_open_result = File::open(self.file_path.as_str());
 
         let mut file = match file_open_result {
@@ -563,60 +562,64 @@ impl Assembler {
         }
     }
 
-    pub fn parse(&mut self){
+    pub fn parse(&mut self) {
         let instruction_set = Parser::define_instruction_set();
-
     }
 
-    pub fn parse_origin_and_end(&mut self) -> Result<(u16, u16), String>{
+    pub fn parse_origin_and_end(&mut self) -> Result<(u16, u16), String> {
         let mut found_orig = false;
         let mut expecting_origin_value_next = false;
 
         let mut found_end = false;
-        
 
         //let expected_origin_tk = &self.tokenized_lines.first().expect("Expected origin.").0.first().expect("Expected token");
-       
 
-        for ln in &self.tokenized_lines{
+        for ln in &self.tokenized_lines {
             let token_stream = &ln.0;
-            
+
             println!("{:03}\t{:?}", ln.1, ln.0);
 
-            for token in token_stream{
-                match token{
+            for token in token_stream {
+                match token {
                     Token::Directive(dir) => {
-                        if dir != "ORIG"{
-                            if !found_orig{
-                                return Err(String::from("Expected .ORIG directive. Found directive '.{dir}' instead."));
-                            }/*else if dir != "END" && !found_end{
+                        if dir != "ORIG" {
+                            if !found_orig {
+                                return Err(String::from(
+                                    "Expected .ORIG directive. Found directive '.{dir}' instead.",
+                                ));
+                            }
+                            /*else if dir != "END" && !found_end{
                                 return Err(format!("Expected .END directive. Found directive '.{dir}' instead."));
-                            }*/else if dir == "END"{
-
-                                if found_end{
-                                    return Err(format!(".END already defined ({:x}).", self.end))
+                            }*/
+                            else if dir == "END" {
+                                if found_end {
+                                    return Err(format!(".END already defined ({:x}).", self.end));
                                 }
 
                                 self.end = ln.1 + self.orig;
                                 found_end = true;
                             }
-                        }else{
-                            if found_orig{
+                        } else {
+                            if found_orig {
                                 return Err(format!(".ORIG aleady defined ({}).", self.orig));
-                            }else{
+                            } else {
                                 expecting_origin_value_next = true;
                             }
                         }
-                    },
+                    }
 
-                    Token::DecimalLiteral(val)|Token::HexLiteral(val) => {
-                        if !expecting_origin_value_next && !found_orig{
+                    Token::DecimalLiteral(val) | Token::HexLiteral(val) => {
+                        if !expecting_origin_value_next && !found_orig {
                             return Err(format!("Not expecting decimal literal."));
-                        }else{
+                        } else {
                             if !found_orig {
                                 match val.sign {
-                                    Sign::MINUS =>  {return Err(format!(".ORIG must be set to a positive value."))},
-                                    _ => {},
+                                    Sign::MINUS => {
+                                        return Err(format!(
+                                            ".ORIG must be set to a positive value."
+                                        ))
+                                    }
+                                    _ => {}
                                 }
 
                                 self.orig = val.value;
@@ -624,127 +627,229 @@ impl Assembler {
                                 expecting_origin_value_next = false;
                             }
                         }
-                    },
-
+                    }
 
                     other => {} /*return Err(if !expecting_origin_value_next {format!("Expected .orig directive. Found {:?} ", other)} else {format!("Expecting number literal.")})*/,
                 }
             }
+        }
 
-        } 
-
-        if !found_orig{
+        if !found_orig {
             return Err(format!("Unable to find .ORIG"));
         }
 
-        if !found_end{
+        if !found_end {
             return Err(format!("Unable to find .END"));
         }
 
         Ok((self.orig, self.end))
     }
 
-    fn parse_directive(&mut self){
-        for ln in &self.tokenized_lines{
+    fn parse_directive(&mut self) {
+        for ln in &self.tokenized_lines {
             let token_stream = &ln.0;
-
-            
-        }  
+        }
     }
 
-    pub fn parse_instructions(&mut self){
-        
+    pub fn parse_instructions(&mut self) {
+        let mut vm = virtual_machine::VirtualMachine::new();
+        let mut instructions: Vec<u16> = Vec::new();
 
         println!("\n Removing leading labels.");
-        for (line, line_offset) in &self.tokenized_lines{
-            let line = match line.strip_prefix(&[Token::Label(format!(""))]){
+        for (line, line_offset) in &self.tokenized_lines {
+            let line = match line.strip_prefix(&[Token::Label(format!(""))]) {
                 Some(without_label) => without_label.clone(),
                 None => line,
-            };     
+            };
             //println!("{line_offset} \t {line:?}");
-            self.parse_single_instr(line.to_vec(), *line_offset);
-            
+            match self.parse_single_instr(line.to_vec(), *line_offset){
+                None => {},
+                Some(word) => {
+                    instructions.push(word);
+                }
+            }
         }
 
-       
+        vm.load_binary_into_memory(instructions, self.orig);
+        loop{
+            vm.fetch();
+            vm.decode();
+            vm.execute();
+            Term::stdout().read_char();
+            
+        }
     }
 
-    fn parse_single_instr(&self, line: Vec<Token>, line_offset: u16){
+    fn parse_single_instr(&self, line: Vec<Token>, line_offset: u16) -> Option<u16>{
         let mut target_instruction: &InstrDef = &InstrDef::new(OP::RES, 0, vec![]);
 
-        if line.starts_with(&[Token::Instruction(format!(""))]){
-            //Find which instruction it is; 
-            match line.first().unwrap(){
+        if line.starts_with(&[Token::Instruction(format!(""))]) {
+            //Find which instruction it is;
+            match line.first().unwrap() {
                 Token::Instruction(instr) => {
                     println!("{:03} Searching for instruction '{instr}'.", line_offset);
-                    target_instruction = &self.instruction_set[instr];//.expect("Undefined instruction {instr}");
-                    
-                },
+                    target_instruction = &self.instruction_set[instr]; //.expect("Undefined instruction {instr}");
+                }
                 // /Token::Directive(dir) => {
                 //     println!("Ignoring directive .{dir} (line {line_offset})");
                 // },
                 _ => panic!("Expected instr, fatal error."),
             }
-            
-        }else{ 
+        } else {
             println!("Ignoring line {line:?}");
-            return;
+            return None;
         }
 
-        //Get line's paramaters 
+        //Get line's paramaters
         let mut args: Vec<Token> = vec![];
         let mut arg_index = 0;
 
         let mut previous: Vec<Token> = Vec::new();
 
-        for i in 0..line.len(){
-            if i == 0{
+        for i in 0..line.len() {
+            if i == 0 {
                 //Ignore instruction
                 continue;
             }
 
-           // println!("Token: '{:?}', i = {i}, arg_index = {arg_index}", line[i]);
-           
+            // println!("Token: '{:?}', i = {i}, arg_index = {arg_index}", line[i]);
 
-            if arg_index == target_instruction.params.len(){
-                panic!("Expected {} operands, found {}. \t[{:?}]", target_instruction.params.len(), arg_index, line);
+            if arg_index == target_instruction.params.len() {
+                panic!(
+                    "Expected {} operands, found {}. \t[{:?}]",
+                    target_instruction.params.len(),
+                    arg_index,
+                    line
+                );
             }
 
-            if (i % 2) == 0 && !line[i].is(&Token::Comma){
+            if (i % 2) == 0 && !line[i].is(&Token::Comma) {
                 panic!("Expecting comma between params. {:?}", line);
             }
 
-            if line[i].is(&Token::Comma){
+            if line[i].is(&Token::Comma) {
                 continue;
             }
 
-            if i%2 != 0 && !line[i].is_valid_arg(&target_instruction.params[arg_index]){
-                panic!("Expected {:?} for instruction '{}', found token '{:?}'", target_instruction.params[arg_index], target_instruction.opcode, line[i]);
+            if i % 2 != 0 && !line[i].is_valid_arg(&target_instruction.params[arg_index]) {
+                panic!(
+                    "Expected {:?} for instruction '{}', found token '{:?}'",
+                    target_instruction.params[arg_index], target_instruction.opcode, line[i]
+                );
             }
 
             //previous.push(line[i].clone());
 
             args.push(line[i].clone());
             arg_index += 1;
-
         }
 
         println!("{line_offset}\t{args:?}\t{target_instruction:?}");
 
+        let mut word: u16 = 0;
+        word += target_instruction.opcode;
+        word += target_instruction.flags_word;
+
+
+        for k in 0..target_instruction.params.len(){
+            match target_instruction.params[k]{
+                Param::Register(pos) => {
+                    match args[k]{
+                        Token::Register(r) => {word += r << pos},
+                        _ => panic!(),
+                    }
+                },
+
+                Param::RegisterORImm5 => {
+                    match &args[k] {
+                        Token::DecimalLiteral(val)|Token::HexLiteral(val) => {
+                            let mut num: u16 = val.value;
+                            println!("|Imm5|: {num:016b} ({num}))");
+                            if num > 2u16.pow(4){
+                                panic!("Invalid imm5");
+                            }
+
+                            if matches!(val.sign, Sign::MINUS){
+                                println!("Negative imm5. {num}");
+                                num = binary_utils::truncate_to((binary_utils::invert_sign(num)), 5) /*+ binary_utils::flag_set_mask(5)*/;
+                            }
+                            word += num;
+                            word = binary_utils::set_flag_true(word, 5);
+                            //word += binary_utils::flag_set_mask(5);
+                            
+                        },
+                        _ => panic!(),
+                    }
+                },
+
+                Param::Bits(bits) => {
+                    match &args[k] {
+                        Token::DecimalLiteral(val)|Token::HexLiteral(val) => {
+                            let mut num: u16 = val.value;
+                            if matches!(val.sign, Sign::MINUS){
+                                num = binary_utils::truncate_to(binary_utils::invert_sign(num), bits);
+                            }
+
+                            word += num;
+                        },
+                        _ => panic!(),
+                    }
+                },
+
+                Param::Label => {
+                    match &args[k] {
+                        Token::Label(lbl) => {
+                            let mut symbol_value = 0;
+
+                            for sym in &self.symbol_table{
+                                if sym.name == *lbl{
+                                    symbol_value = sym.offset_from_origin;
+                                }
+                            }
+
+                            if symbol_value == 0 {
+                                panic!("Undefined label '{lbl}'");
+                            }
+
+                            //PC-Offset-9
+                            println!("Label: {symbol_value}, PC: {line_offset}. L-PC = {}",  binary_utils::as_negative_i16(binary_utils::add_2s_complement(symbol_value, binary_utils::invert_sign(line_offset+1))));
+
+                            let mut pc_offset_9 = binary_utils::add_2s_complement(symbol_value, binary_utils::invert_sign(line_offset+1)) << 7 >>7;
+                            //WARNING
+
+                            // if binary_utils::is_negative(pc_offset_9){
+                            //     pc_offset_9 = (binary_utils::set_flag_true(pc_offset_9, 8) << 9 ) >> 9;
+                            // }
+
+                            println!("PC-offset 9 = {}", binary_utils::as_negative_i16(pc_offset_9));
+                            word += pc_offset_9;
+                        },
+
+                        _ => panic!(),
+                    }
+
+                    
+
+                    
+                },_ => {},
+            }
+        }
+
+        println!("Instr: {word:016b}");
+        return Some(word);
     }
 }
-    /*pub fn find_origin_and_end(&mut self){
-        let first_nc_line = self.processed_lines.first().unwrap().text.trim_start();
+/*pub fn find_origin_and_end(&mut self){
+    let first_nc_line = self.processed_lines.first().unwrap().text.trim_start();
 
-        if(first_nc_line.chars() != '.'){
+    if(first_nc_line.chars() != '.'){
 
-        }
+    }
 
-        for c in first_nc_line.chars(){
+    for c in first_nc_line.chars(){
 
-        }
-    }*/
-
+    }
+}*/
 
 pub type SymbolTable = Vec<Symbol>;
 
@@ -807,9 +912,6 @@ pub fn read_asm_file(path: &str) -> Result<SourceLines, error::FileLoadError> {
 //     result
 // }*/
 
-
-
-
 fn parse_line_for_symbol(line: &SourceLine) -> Option<String> {
     //First remove comments
     let mut contains_comment = false;
@@ -852,7 +954,7 @@ fn parse_line_for_symbol(line: &SourceLine) -> Option<String> {
 
 fn is_instruction(s: &str) -> bool {
     vec![
-        "AND", "ADD", "NOT", "BR", "BRz", "BRp", "BRn", "BRzn", "BRznp", "BRnp", "BRzp", "LD",
+        "AND", "ADD", "NOT", "BR", "BRz", "BRp", "BRn", "BRnz", "BRnzp", "BRnp", "BRzp", "LD",
         "LDI", "LDR", "ST", "STR", "STI", "TRAP", "JMP", "RET", "JSR", "JSRR", "LEA", "HALT",
     ]
     .contains(&s)
@@ -947,7 +1049,7 @@ struct InstrDef {
 impl InstrDef {
     fn new(opcode: virtual_machine::OP, flags_word: u16, params: Vec<Param>) -> Self {
         InstrDef {
-            opcode: opcode as u16,
+            opcode: (opcode as u16) << 12,
             flags_word,
             params,
         }
@@ -969,7 +1071,7 @@ impl Parser {
             InstrDef::new(
                 OP::ADD,
                 0,
-                vec![Param::Register, Param::Register, Param::RegisterORImm5],
+                vec![Param::Register(9), Param::Register(6), Param::RegisterORImm5],
             ),
         );
         instr_set.insert(
@@ -977,7 +1079,7 @@ impl Parser {
             InstrDef::new(
                 OP::AND,
                 0,
-                vec![Param::Register, Param::Register, Param::RegisterORImm5],
+                vec![Param::Register(9), Param::Register(6), Param::RegisterORImm5],
             ),
         );
 
@@ -1001,26 +1103,40 @@ impl Parser {
             InstrDef::new(OP::BR, flag_set_mask(9), vec![Param::Label]),
         );
 
-
         instr_set.insert(
             String::from("BRnz"),
-            InstrDef::new(OP::BR, flag_set_mask(11) + flag_set_mask(10), vec![Param::Label]),
+            InstrDef::new(
+                OP::BR,
+                flag_set_mask(11) + flag_set_mask(10),
+                vec![Param::Label],
+            ),
         );
-
 
         instr_set.insert(
             String::from("BRnp"),
-            InstrDef::new(OP::BR, flag_set_mask(11) + flag_set_mask(9), vec![Param::Label]),
+            InstrDef::new(
+                OP::BR,
+                flag_set_mask(11) + flag_set_mask(9),
+                vec![Param::Label],
+            ),
         );
 
         instr_set.insert(
             String::from("BRzp"),
-            InstrDef::new(OP::BR, flag_set_mask(10) + flag_set_mask(9), vec![Param::Label]),
+            InstrDef::new(
+                OP::BR,
+                flag_set_mask(10) + flag_set_mask(9),
+                vec![Param::Label],
+            ),
         );
 
         instr_set.insert(
             String::from("BRnzp"),
-            InstrDef::new(OP::BR,  flag_set_mask(10) + flag_set_mask(9) + flag_set_mask(11), vec![Param::Label]),
+            InstrDef::new(
+                OP::BR,
+                flag_set_mask(10) + flag_set_mask(9) + flag_set_mask(11),
+                vec![Param::Label],
+            ),
         );
 
         instr_set.insert(
@@ -1036,12 +1152,12 @@ impl Parser {
 
         instr_set.insert(
             String::from("LD"),
-            InstrDef::new(OP::LD, 0, vec![Param::Register, Param::Label]),
+            InstrDef::new(OP::LD, 0, vec![Param::Register(9), Param::Label]),
         );
 
         instr_set.insert(
             String::from("LDI"),
-            InstrDef::new(OP::LDI, 0, vec![Param::Register, Param::Label]),
+            InstrDef::new(OP::LDI, 0, vec![Param::Register(9), Param::Label]),
         );
 
         instr_set.insert(
@@ -1049,25 +1165,47 @@ impl Parser {
             InstrDef::new(
                 OP::LDR,
                 0,
-                vec![Param::Register, Param::Register, Param::Bits(6)],
+                vec![Param::Register(9), Param::Register(6), Param::Bits(6)],
             ),
         );
 
-        instr_set.insert(String::from("LEA"), InstrDef::new(OP::LEA, 0, vec![Param::Register, Param::Label]));
-
-        instr_set.insert(String::from("NOT"), InstrDef::new(OP::NOT, 0, vec![Param::Register, Param::Register]));
-
-        instr_set.insert(String::from("RET"), InstrDef::new(OP::JMP, 0b111<<6 /*set register to R7 */, vec![]));
-        instr_set.insert(String::from("RTI"), InstrDef::new(OP::RTI, 0, vec![]));
-
-        instr_set.insert(String::from("ST"), InstrDef::new(OP::ST, 0, vec![Param::Register, Param::Label]));
-        instr_set.insert(String::from("STI"), InstrDef::new(OP::STI, 0, vec![Param::Register, Param::Label]));
         instr_set.insert(
-            String::from("STR"),
-            InstrDef::new(OP::STR, 0, vec![Param::Register, Param::Register, Param::Bits(6)]),
+            String::from("LEA"),
+            InstrDef::new(OP::LEA, 0, vec![Param::Register(9), Param::Label]),
         );
 
-        instr_set.insert(String::from("TRAP"), InstrDef::new(OP::TRAP, 0, vec![Param::Bits(8)]));
+        instr_set.insert(
+            String::from("NOT"),
+            InstrDef::new(OP::NOT, 0b11_1111, vec![Param::Register(9), Param::Register(6)]),
+        );
+
+        instr_set.insert(
+            String::from("RET"),
+            InstrDef::new(OP::JMP, 0b111 << 6 /*set register to R7 */, vec![]),
+        );
+        instr_set.insert(String::from("RTI"), InstrDef::new(OP::RTI, 0, vec![]));
+
+        instr_set.insert(
+            String::from("ST"),
+            InstrDef::new(OP::ST, 0, vec![Param::Register(9), Param::Label]),
+        );
+        instr_set.insert(
+            String::from("STI"),
+            InstrDef::new(OP::STI, 0, vec![Param::Register(9), Param::Label]),
+        );
+        instr_set.insert(
+            String::from("STR"),
+            InstrDef::new(
+                OP::STR,
+                0,
+                vec![Param::Register(9), Param::Register(6), Param::Bits(6)],
+            ),
+        );
+
+        instr_set.insert(
+            String::from("TRAP"),
+            InstrDef::new(OP::TRAP, 0, vec![Param::Bits(8)]),
+        );
         instr_set.insert(String::from("HALT"), InstrDef::new(OP::RES, 0, vec![]));
 
         instr_set
@@ -1079,7 +1217,7 @@ impl Parser {
 #[derive(Debug)]
 enum Param {
     Bits(u16),
-    Register,
+    Register(u16), /*Lower bit [val -> val+2] */
     Label,
     RegisterORImm5,
     Imm5,

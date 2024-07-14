@@ -25,7 +25,7 @@ fn main() {
     // dbg!(assemble::build_symbol_table(&file_contents));
 
 
-    let mut asm = assemble::Assembler::new(".\\src\\asm-files\\test3.asm");
+    let mut asm = assemble::Assembler::new(".\\src\\asm-files\\test4.asm");
     asm.load();
     asm.tokenize();
     
@@ -34,7 +34,8 @@ fn main() {
         Err(e) => eprintln!("Error finding program .ORIG and .END: {e}"),
         Ok(r) => println!(".ORIG {:x} \t .END {:x}", r.0, r.1),
     }
-    
+    let neg = binary_utils::truncate_to(binary_utils::invert_sign(5), 5);
+    println!("\n\n{:016b} {:016b} {:016b}", binary_utils::invert_sign(5), binary_utils::truncate_to(binary_utils::invert_sign(5), 5), binary_utils::sign_extend(neg, 5));
     asm.parse_instructions();
 
     /*let sentence = "ADD R0, R1, #-255";
@@ -97,6 +98,8 @@ fn main() {
     let result = load_binary::read_binary_from_file(String::from("C:\\Users\\Admin\\PROJECTS\\RUST\\LC-3\\src\\test")).expect("...?");
 
     println!("{:?}", result);
+
+    
 
     for i in 0..result.len(){
         println!("{}\t{:04b} {:012b}", i, binary_utils::instructions::get_opcode_4bit(result[i]), binary_utils::isolate_bits_then_shift(result[i], (0,12)));

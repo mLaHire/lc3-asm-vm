@@ -8,7 +8,7 @@ use crate::binary_utils::{
     MAX_MEMORY_SIZE,
 };
 
-pub const PC_START: u16 = 0x300;
+pub const PC_START: u16 = 0x00;
 pub const PC_START_IDX: usize = 0x300;
 
 #[derive(Debug, PartialEq)]
@@ -32,6 +32,7 @@ impl Registers {
         }
     }
     pub fn set(&mut self, n: u16, value: u16) {
+        println!("R{n} <- {value}");
         match n {
             0 => self.r[0] = value,
             1 => self.r[1] = value,
@@ -48,7 +49,8 @@ impl Registers {
     }
 
     pub fn read(&mut self, n: u16) -> u16 {
-        match n {
+        
+        let val = match n {
             0 => self.r[0],
             1 => self.r[1],
             2 => self.r[2],
@@ -61,7 +63,10 @@ impl Registers {
             _ => {
                 panic!("Invalid read_register 'R{n}.'");
             }
-        }
+        };
+
+        println!("R{n} = {val}");
+        return val;
     }
 
     pub fn display(&mut self) {
@@ -291,7 +296,7 @@ impl VirtualMachine {
             15 => OP::TRAP,
 
             _ => {
-                panic!("Invalid instruction.");
+                panic!("Invalid instruction. {opcode_4bit:04b}");
             }
         }
     }
@@ -312,7 +317,7 @@ impl VirtualMachine {
         } else {
             let imm5_value = get_sign_ext_value(instr, 5);
             result = add_2s_complement(self.read_reg(src_r1), imm5_value);
-            println!("???{} + {} = {}", self.read_reg(src_r1), imm5_value, result);
+            println!("Src '{}' + Imm5 '{:05b}' = {}", self.read_reg(src_r1), binary_utils::as_negative_i16(imm5_value), binary_utils::as_negative_i16(result));
         }
 
         self.set_reg(dest_r1, result);
@@ -470,6 +475,7 @@ impl VirtualMachine {
         } else {
             self.registers.condition = ConditionCode::POSITIVE;
         }
+        println!("Updated condtion code: {:?}", self.registers.condition);
     }
 
     pub fn read_reg(&mut self, register: u16) -> u16 {
