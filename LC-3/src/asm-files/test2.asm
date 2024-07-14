@@ -8,6 +8,7 @@ TEST    IN
         BRn FINISH
         ADD R1, R0, #-15
         NOT R1, R1
+        JMP R0
         BRn FINISH
         HALT
 FINISH  ADD R2, R2, #1

@@ -25,18 +25,26 @@ fn main() {
     // dbg!(assemble::build_symbol_table(&file_contents));
 
 
-    let mut asm = assemble::Assembler::new(".\\src\\asm-files\\test2.asm");
+    let mut asm = assemble::Assembler::new(".\\src\\asm-files\\test3.asm");
     asm.load();
     asm.tokenize();
+    
 
-    let sentence = "ADD R0, R1, #-255";
+    match asm.parse_origin_and_end(){
+        Err(e) => eprintln!("Error finding program .ORIG and .END: {e}"),
+        Ok(r) => println!(".ORIG {:x} \t .END {:x}", r.0, r.1),
+    }
+    
+    asm.parse_instructions();
+
+    /*let sentence = "ADD R0, R1, #-255";
     println!("{:?}", assemble::Token::tokenize_str(sentence));
 
     let sentence = "ADD R0, R1, x11";
     println!("{:?}", assemble::Token::tokenize_str(sentence));
 
     let sentence = "LBL ST R1, SAVE1";
-    println!("{:?}", assemble::Token::tokenize_str(sentence));
+    println!("{:?}", assemble::Token::tokenize_str(sentence));*/
 
 
     return;

@@ -94,6 +94,10 @@ pub fn set_flag_true(word: u16, bit: u16) -> u16 {
     }
 }
 
+pub fn flag_set_mask(bit: u16) -> u16{
+    set_flag_true(0, bit)
+}
+
 pub fn bits_required_for_number(n: u16) -> u16{
     for i in 0..16{
         if n >> i == 0{
@@ -122,7 +126,7 @@ pub fn is_negative(word: u16) -> bool {
     flag_is_set(word, 15)
 }
 
-pub fn as_negative(word: u16) -> i16{
+pub fn as_negative_i16(word: u16) -> i16{
     if !is_negative(word) {
         word as i16
     }else{
@@ -130,6 +134,8 @@ pub fn as_negative(word: u16) -> i16{
     }
 }
 
+
+//2's complenet
 pub fn invert_sign(word: u16) -> u16 {
     word.not() + 1
 }

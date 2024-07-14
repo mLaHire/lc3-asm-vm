@@ -74,6 +74,7 @@ impl Registers {
 }
 
 #[derive(Debug)]
+#[derive(Copy, Clone)]
 pub enum OP {
     BR = 0, // branch
     ADD,    // add
@@ -365,7 +366,7 @@ impl VirtualMachine {
             || (self.registers.condition == ConditionCode::POSITIVE && p)
         {
             dbg!(self.program_counter, pc_offset_9_ext, add_2s_complement(self.program_counter, pc_offset_9_ext));
-            println!("PC_OFFSET_9 = {}", binary_utils::as_negative(pc_offset_9_ext));
+            println!("PC_OFFSET_9 = {}", binary_utils::as_negative_i16(pc_offset_9_ext));
             self.program_counter = add_2s_complement(self.program_counter, pc_offset_9_ext);
         }
     }
