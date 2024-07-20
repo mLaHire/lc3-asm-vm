@@ -1,8 +1,8 @@
         .ORIG x000
-       ADD R1, R1, #15 
-       ADD R1, R1, #-5
+       ADD R1, R1, xE
+       ADD R1, R1, #-1
  LOOP   
-        BRnz EXIT
+        BRn EXIT
         BRnzp LOOP
  EXIT   HALT
         .END

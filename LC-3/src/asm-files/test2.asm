@@ -4,7 +4,7 @@
         AND R2, R2, #0
 TEST    IN
         BRz TEST
-        ADD Rl, R0, #-10
+        ADD R1, R0, #-10
         BRn FINISH
         ADD R1, R0, #-15
         NOT R1, R1

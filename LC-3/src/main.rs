@@ -25,7 +25,7 @@ fn main() {
     // dbg!(assemble::build_symbol_table(&file_contents));
 
 
-    let mut asm = assemble::Assembler::new(".\\src\\asm-files\\test4.asm");
+    let mut asm = assemble::Assembler::new(".\\src\\asm-files\\hello_world.asm");
     asm.load();
     asm.tokenize();
     
@@ -35,7 +35,8 @@ fn main() {
         Ok(r) => println!(".ORIG {:x} \t .END {:x}", r.0, r.1),
     }
     let neg = binary_utils::truncate_to(binary_utils::invert_sign(5), 5);
-    println!("\n\n{:016b} {:016b} {:016b}", binary_utils::invert_sign(5), binary_utils::truncate_to(binary_utils::invert_sign(5), 5), binary_utils::sign_extend(neg, 5));
+    //println!("\n\n{:016b} {:016b} {:016b}", binary_utils::invert_sign(5), binary_utils::truncate_to(binary_utils::invert_sign(5), 5), binary_utils::sign_extend(neg, 5));
+    asm.parse_directives();
     asm.parse_instructions();
 
     /*let sentence = "ADD R0, R1, #-255";

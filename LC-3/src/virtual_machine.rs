@@ -1,11 +1,13 @@
-use core::panic;
-use std::thread;
-use std::{io, io::Read, sync::mpsc};
 use crate::error;
+use core::panic;
+use std::sync::Arc;
+use std::thread::{self, sleep};
+use std::time::Duration;
+use std::{io, io::Read, sync::mpsc, sync::Mutex};
+use crate::Term;
 
 use crate::binary_utils::{
-    self, add_2s_complement, flag_is_set, instructions::*, is_negative, MAX_MEMORY,
-    MAX_MEMORY_SIZE,
+    self, add_2s_complement, flag_is_set, instructions::*, is_negative, MAX_MEMORY, MAX_MEMORY_SIZE,
 };
 
 pub const PC_START: u16 = 0x00;
@@ -49,7 +51,6 @@ impl Registers {
     }
 
     pub fn read(&mut self, n: u16) -> u16 {
-        
         let val = match n {
             0 => self.r[0],
             1 => self.r[1],
@@ -78,8 +79,7 @@ impl Registers {
     }
 }
 
-#[derive(Debug)]
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum OP {
     BR = 0, // branch
     ADD,    // add
@@ -109,12 +109,24 @@ pub enum OP {
 }*/
 
 #[derive(Debug)]
+pub struct IORegister {
+    signal: u16,
+    data: u16,
+}
+
+#[derive(Debug)]
 pub struct VirtualMachine {
     memory: [u16; 0xFFFF],
     pub registers: Registers,
 
     pub kbsr_addr: u16,
     pub kbdr_addr: u16,
+
+    // pub kbsr_mutex: Arc<Mutex<u16>>,
+    // pub kbdr_mutex: Arc<Mutex<u16>>,
+
+    pub keyboard_reg_mutex: Arc<Mutex<IORegister>>,
+    pub display_reg_mutex: Arc<Mutex<IORegister>>,
     //r: [u16; 8],
     //condition: ConditionCodes,
     program_counter: u16,
@@ -140,48 +152,154 @@ impl VirtualMachine {
             kbsr_addr: 0xfe00,
             kbdr_addr: 0xfe02,
 
+            // kbsr_mutex: Arc::new(Mutex::new(0)),
+            // kbdr_mutex: Arc::new(Mutex::new(0)),
+
+            keyboard_reg_mutex: Arc::new(Mutex::new(IORegister { data: 0, signal: 0 })),
+            display_reg_mutex: Arc::new(Mutex::new(IORegister{data: 0, signal: 0})),
+
             registers: Registers::new(),
 
             program_counter: PC_START,
         }
     }
 
-    pub fn run() {
-        let (tx, rx) = mpsc::channel::<u16>();
+    pub fn set_program_counter(&mut self, pc: u16){
+        self.program_counter = pc;
+    }
 
-        thread::spawn(move || loop {
-            let mut input_char: [u8; 1] = [0];
-            io::stdin()
-                .read_exact(&mut input_char)
-                .expect("Error reading char.");
-            tx.send(input_char[0] as u16)
-                .expect("Failure to send input char '{input_char}'");
+    pub fn run_io_thread(&mut self) {
+        // let kbsr_mutex = Arc::clone(&self.kbsr_mutex);
+        // let kbdr_mutex = Arc::clone(&self.kbsr_mutex);
+
+        let kb_registers = self.keyboard_reg_mutex.clone();
+        let disp_registers = self.display_reg_mutex.clone();
+
+        println!("\n\tStarting IO thread...");
+
+        thread::spawn(move || {
+            loop {
+                //sleep(Duration::from_millis(10));
+                //println!(">>>>");
+                // let mut input_char: [u8; 1] = [0];
+
+                
+
+                // let mut input = io::stdin();
+                // input
+                //     .read_exact(&mut input_char)
+                //     .expect("Error reading char.");
+                // drop(input);
+
+                // if input_char[0] == b'\n' || input_char[0] == 0 || input_char[0] == 13{
+                //     continue;
+                // }
+
+                let mut input_char: u16 = 0;
+            //io::stdin().read_exact(&mut input_char).expect("Error reading char.");
+                let term = Term::stdout();
+                input_char = term.read_char().expect("Failure to read input char.").try_into().expect("msg");
+                  
+               // input.lock();
+                println!("INPUT: '{}' (ASCII {input_char})", char::from_u32(input_char as u32).unwrap());
+                //   panic!();
+
+                // let mut kbsr = kbsr_mutex.try_lock().expect("KBSR locked");
+
+                let mut kb_regs = kb_registers
+                    .try_lock()
+                    .expect("[IO] Keyboard registers locked.");
+                // let mut kbsr = &mut kb_regs.signal;
+
+                //.lock().unwrap();
+
+                if !binary_utils::flag_is_set((*kb_regs).signal, 15) {
+                    println!("[IO]\tChar input recived. KBSR is clear. Updating KBSR and KBDR");
+                    //let mut kbdr = &mut kb_regs.data;
+                    // *kbdr = input_char[0] as u16;
+                    // *kbsr = binary_utils::set_flag_true(0, 15);
+
+                    (*kb_regs).signal = binary_utils::set_flag_true(0, 15);
+                    (*kb_regs).data = input_char;
+                } else {
+                    println!("[IO]\tChar input recived. KBSR is NOT clear. Ignoring input.");
+                }
+                drop(kb_regs);
+            }
         });
     }
 
-    pub fn load_binary_into_memory(&mut self, binary: Vec<u16>, program_start_addr: u16){
+    pub fn load_binary_into_memory(&mut self, binary: Vec<u16>, program_start_addr: u16) {
         if binary.is_empty() {
             panic!("Attempt to load empty binary into memory.");
         }
 
         let mut offset = 0;
-        for instr in binary{
+        for instr in binary {
             self.write_memory(program_start_addr + offset, instr);
             offset += 1;
         }
 
-        println!("Loaded binary ({} instructions) into memory, from ADDRESS {:x} to {:x}. ", offset, program_start_addr, program_start_addr+offset);
+        println!(
+            "Loaded binary ({} instructions) into memory, from ADDRESS {:x} to {:x}. ",
+            offset,
+            program_start_addr,
+            program_start_addr + offset
+        );
     }
 
-    pub fn read_memory(&self, address: u16) -> u16 {
+    pub fn read_memory(&mut self, address: u16) -> u16 {
         if address >= MAX_MEMORY {
-            panic!("Cannot access memory out of bounds");
+            panic!("RUNTIME ERROR: Cannot access memory out of bounds.");
+        }
+
+        if address == self.kbsr_addr {
+            println!("\t\t(!)\tReading Keyboard Registers (SIGNAL)...(!)\t");
+            // let kbsr_resetter = self.kbsr_mutex.try_lock().expect("[READMEM] Kbsr blocked.");
+
+            // self.memory[self.kbsr_addr as usize] = *kbsr_resetter;
+            // println!("Updating kbsr (={})", *kbsr_resetter);
+            // if binary_utils::flag_is_set(*kbsr_resetter, 15){
+
+            //     //return *kbsr_resetter;
+            // }
+            let kb_reg = self
+                .keyboard_reg_mutex
+                .try_lock()
+                .expect("[CPU]\tFailed to lock Keyboard Registers.");
+            let signal = kb_reg.signal;
+            self.memory[address as usize] = signal;
+        }
+
+        if address == self.kbdr_addr {
+            println!("\t\t(!)Reading kbdr\t\t(!)");
+
+            // let mut kbsr_resetter = self.kbsr_mutex.lock().unwrap();
+            // if binary_utils::flag_is_set(*kbsr_resetter, 15){
+            //     *kbsr_resetter = 0;
+            //     drop(kbsr_resetter);
+            //     let mut kbdr_reader = self.kbdr_mutex.try_lock().expect("[READ MEM] KBDR locked.");
+            //     let data = *kbdr_reader;
+            //     self.memory[self.kbdr_addr as usize] = data;
+
+            // }
+            let kb_reg = self
+                .keyboard_reg_mutex
+                .try_lock()
+                .expect("[CPU] Failed to lock kb_reg (DATA)");
+            // if binary_utils::flag_is_set(kb_reg.signal, 15){
+
+            // }
+            self.memory[address as usize] = kb_reg.data;
+            //drop(kbdr_reader);
+            //drop(kbsr_resetter);
         }
 
         let address: usize = address
             .try_into()
             .expect("Unable to convert from u16 to usize to access memmory.");
 
+        println!("[READ]\tMEM[{address:04x}] (={})\t", self.memory[address]);
         self.memory[address]
     }
 
@@ -211,12 +329,20 @@ impl VirtualMachine {
             panic!("Cannot access memory out of bounds");
         }
 
+        if address == self.kbsr_addr {
+            // let mut kbsr_updater = self.kbsr_mutex.lock().unwrap();
+            // *kbsr_updater = value;
+
+            let mut kb_reg = self.keyboard_reg_mutex.try_lock().expect("[CPU][WRITE MEM]\tUnable to lock kb_reg.");
+            (*kb_reg).data = value;
+        }
+
         let address: usize = address
             .try_into()
             .expect("Unable to convert from u16 to usize to access memmory.");
 
         self.memory[address] = value;
-        println!("{:016b} --> {:0x}", value, address);
+        println!("[WRITE]\t{:016b} --> {:0x}", value, address);
     }
 
     pub fn fetch(&mut self) {
@@ -256,6 +382,7 @@ impl VirtualMachine {
             OP::AND => self.execute_op_and(instr),
             OP::BR => self.execute_op_br(instr),
             OP::ST => self.execute_op_st(instr),
+            OP::STI => self.execute_op_sti(instr),
             OP::LD => self.execute_op_ld(instr),
             OP::NOT => self.execute_op_not(instr),
             OP::LDI => self.execute_op_ldi(instr),
@@ -302,6 +429,7 @@ impl VirtualMachine {
     }
 }
 
+//Execute instruction
 impl VirtualMachine {
     pub fn dump_machine(&self) {}
 
@@ -317,7 +445,7 @@ impl VirtualMachine {
         } else {
             let imm5_value = get_sign_ext_value(instr, 5);
             result = add_2s_complement(self.read_reg(src_r1), imm5_value);
-            println!("Src '{}' + Imm5 '{:05b}' = {}", self.read_reg(src_r1), binary_utils::as_negative_i16(imm5_value), binary_utils::as_negative_i16(result));
+            //println!("Src '{}' + Imm5 '{:05b}' = {}", self.read_reg(src_r1), binary_utils::as_negative_i16(imm5_value), binary_utils::as_negative_i16(result));
         }
 
         self.set_reg(dest_r1, result);
@@ -370,8 +498,8 @@ impl VirtualMachine {
             || (self.registers.condition == ConditionCode::ZERO && z)
             || (self.registers.condition == ConditionCode::POSITIVE && p)
         {
-            dbg!(self.program_counter, pc_offset_9_ext, add_2s_complement(self.program_counter, pc_offset_9_ext));
-            println!("PC_OFFSET_9 = {}", binary_utils::as_negative_i16(pc_offset_9_ext));
+            //dbg!(self.program_counter, pc_offset_9_ext, add_2s_complement(self.program_counter, pc_offset_9_ext));
+            //println!("PC_OFFSET_9 = {}", binary_utils::as_negative_i16(pc_offset_9_ext));
             self.program_counter = add_2s_complement(self.program_counter, pc_offset_9_ext);
         }
     }
@@ -383,7 +511,7 @@ impl VirtualMachine {
 
         let pc_offset_9_ext = get_sign_ext_value(instr, 9);
 
-        let evaluated_address = (self.program_counter + pc_offset_9_ext)
+        let evaluated_address = (self.program_counter + pc_offset_9_ext + 1)
             .try_into()
             .expect("Unable to convert from u16 to usize to access memmory.");
 
@@ -399,16 +527,13 @@ impl VirtualMachine {
 
         let pc_offset_9_ext = get_sign_ext_value(instr, 9);
 
-        let evaluated_ptr_address: usize = (self.program_counter + pc_offset_9_ext)
+        let evaluated_ptr_address: usize = (self.program_counter + pc_offset_9_ext +1)
             .try_into()
             .expect("Unable to convert from u16 to usize to access memmory.");
 
         let final_target_addr = self.memory[evaluated_ptr_address];
 
-
         self.write_memory(final_target_addr, src_reg_contents);
-    
-
     }
 
     fn execute_op_ld(&mut self, instr: u16) {
@@ -418,10 +543,9 @@ impl VirtualMachine {
 
         /*dbg!(self.program_counter + pc_offset_9_ext);
         dbg!(self.read_memory(self.program_counter + pc_offset_9_ext));*/
-        self.set_reg(
-            dest_reg,
-            self.read_memory(self.program_counter + pc_offset_9_ext),
-        );
+        let address = self.program_counter + pc_offset_9_ext + 1;
+        let value = self.read_memory(address);
+        self.set_reg(dest_reg, value);
     }
 
     fn execute_op_ldi(&mut self, instr: u16) {
@@ -432,17 +556,18 @@ impl VirtualMachine {
         /*dbg!(self.program_counter + pc_offset_9_ext);
         dbg!(self.read_memory(self.program_counter + pc_offset_9_ext));*/
 
-        let address_to_load_from = self.read_memory(self.program_counter + pc_offset_9_ext);
+        let address_to_load_from = self.read_memory(self.program_counter + pc_offset_9_ext + 1);
+        let value_at_address = self.read_memory(address_to_load_from);
 
-        self.set_reg(dest_reg, self.read_memory(address_to_load_from));
+        self.set_reg(dest_reg, value_at_address);
 
         let result: u16 = self.read_reg(dest_reg);
         self.update_condition(result);
     }
 
     // JMP BASE-REGISTER. Unconditional jump to addr specificed by R[base]
-    fn execute_op_jmp(&mut self, instr: u16){
-        let base_reg = get_register_at(instr, (6,8));
+    fn execute_op_jmp(&mut self, instr: u16) {
+        let base_reg = get_register_at(instr, (6, 8));
         let address_at_base_reg = self.read_reg(base_reg);
 
         self.program_counter = address_at_base_reg;

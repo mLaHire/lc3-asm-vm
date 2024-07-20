@@ -107,7 +107,7 @@ pub fn bits_required_for_number(n: u16) -> u16{
             return i;
         }
     }
-    panic!("Number out of range.");
+    //panic!("Number ({n}) out of range.");
     return 16;
 }
 
