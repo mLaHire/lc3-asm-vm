@@ -186,25 +186,6 @@ pub fn add_2s_complement(word_1: u16, word_2: u16) -> u16 {
     sum
 }
 
-/*
-pub fn add_2s_comp_to_signed(signed: i16, unsigned: u16) -> i16 {
-    if is_negative(unsigned) {
-        let unsigned = invert_sign(unsigned);
-        signed - 0i16.overflowing_add_unsigned(unsigned).0
-    } else {
-        signed.overflowing_add_unsigned(unsigned).0
-    }
-}
-
-pub fn to_i16(word: u16) -> i16 {
-    if !is_negative(word) {
-        word.try_into().expect("{word} is not negative")
-    } else {
-        let mut new_word = word.clone();
-        set_flag_false(&mut new_word, 15);
-        word.try_into().expect("{word} is negative")
-    }
-}*/
 
 pub fn sign_extend(word: u16, most_significant_bit: u16) -> u16 {
     if isolate_bit(word, most_significant_bit) == 0 {
@@ -220,9 +201,17 @@ pub fn sign_extend(word: u16, most_significant_bit: u16) -> u16 {
     extended
 }
 
-pub fn truncate_to(word: u16, bits: u16) -> u16 {
+pub fn truncate_to_bit(word: u16, bit: u16) -> u16 {
     let mut result = word;
-    for i in bits + 1..16 {
+    for i in (bit)..16 {
+        result = set_flag_false(result, i);
+    }
+    result
+}
+
+pub fn truncate_to_n_bit(word: u16, n: u16) -> u16 {
+    let mut result = word;
+    for i in (n-1)..16 {
         result = set_flag_false(result, i);
     }
     result

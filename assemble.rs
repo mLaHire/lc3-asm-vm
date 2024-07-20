@@ -105,7 +105,6 @@ impl Token {
                     };
             }
         }
-
     }
 
     pub fn as_u16(&self, truncate_to: Option<u16>) -> u16 {
@@ -125,7 +124,7 @@ impl Token {
                     );
                 }
 
-                return binary_utils::truncate_to(result, limit);
+                return binary_utils::truncate_to_bit(result, limit);
             });
             return result;
         } else {
@@ -154,7 +153,7 @@ impl Token {
             index += 1;
             match current_token {
                 None => {
-                    if c == ' ' || c == '\n' {
+                    if c == ' ' || c == '\n' || c == '\t' {
                         continue;
                     }
 
@@ -211,7 +210,7 @@ impl Token {
                             }
 
                             //Terminators
-                            if c == ',' || c == ' ' || c == '\n' {
+                            if c == ',' || c == ' ' || c == '\n' || c == '\t' {
                                 let text = &current_token_text;
                                 //Register
                                 if text.starts_with("R")
@@ -266,7 +265,7 @@ impl Token {
                             if c.is_ascii_digit() {
                                 current_token_text.push(c);
                                 //println!("Found char {c} for decimal literal.");
-                            } else if c == ',' || c == ' ' || c == '\n' {
+                            } else if c == ',' || c == ' ' || c == '\n' || c == '\t' {
                                 let mut interpretation: NumberLiteral = NumberLiteral::new();
                                 //println!("'{}'", current_token_text);
                                 if current_token_text.starts_with("-") {
@@ -327,7 +326,7 @@ impl Token {
 
                             if c.is_ascii_hexdigit() {
                                 current_token_text.push(c);
-                            } else if c == ',' || c == ' ' || c == '\n' {
+                            } else if c == ',' || c == ' ' || c == '\n' || c == '\t' {
                                 if index + 1 == line.text.len() {
                                     current_token_text.push(c);
                                 }
@@ -373,7 +372,7 @@ impl Token {
 
                         Self::Directive(_) => {
                             if !c.is_ascii_alphabetic() {
-                                if c == ',' || c == ' ' || c == '\n' {
+                                if c == ',' || c == ' ' || c == '\n' || c == '\t' {
                                     if !Token::is_directive(&current_token_text) {
                                         return Err(format!(
                                             "'.{}' is not a valid directive.",
@@ -445,6 +444,35 @@ impl SourceLine {
     }
 }
 
+pub struct TrapInstruction {
+    instructions: Vec<u16>,
+    origin: u16,
+    trap_vector: u16,
+    memory_writes: Vec<(u16, u16)>,
+}
+
+impl TrapInstruction {
+    pub fn new(filename: &str, trap_vector: u16) -> Self {
+        let mut asm = Assembler::new(format!(".\\src\\asm-files\\trap\\{}.asm", filename).as_str());
+        asm.load();
+        asm.tokenize();
+        match asm.parse_origin_and_end() {
+            Err(e) => panic!("Error finding program .ORIG and .END: {e}"),
+            Ok(r) => println!("TRAP Program\t.ORIG {:x}\t.END{:x}", r.0, r.1),
+        };
+        asm.load_symbols();
+        //asm.trim_lines();
+        let memory_writes = asm.parse_directives_to_list();
+        let instructions = asm.parse_instructions();
+        TrapInstruction {
+            memory_writes,
+            instructions,
+            trap_vector,
+            origin: asm.orig,
+        }
+    }
+}
+
 pub struct Assembler {
     file_path: String,
     raw_lines: Vec<String>,
@@ -453,7 +481,7 @@ pub struct Assembler {
     symbol_table: SymbolTable,
     instruction_set: HashMap<String, InstrDef>,
     vm: virtual_machine::VirtualMachine,
-    orig: u16,
+    pub orig: u16,
     end: u16,
 }
 
@@ -495,7 +523,8 @@ impl Assembler {
         for ln in &self.processed_lines {
             println!("{:03}\t{}", ln.actual_line, ln.text);
         }
-        self.symbol_table = Self::build_symbol_table(&self.processed_lines);
+        //self.symbol_table = Self::build_symbol_table(&self.processed_lines);
+        //println!("Symbol table: {:#?}", self.symbol_table);
     }
 
     pub fn omit_comments(&self) -> Vec<SourceLine> {
@@ -537,6 +566,7 @@ impl Assembler {
     }
 
     pub fn build_symbol_table(lines: &Vec<SourceLine>) -> SymbolTable {
+        todo!();
         let mut table: SymbolTable = Vec::new();
 
         for line in lines {
@@ -562,6 +592,16 @@ impl Assembler {
         table
     }
 
+    pub fn load_symbols(&mut self){
+        self.trim_lines();
+        for (token_stream, number) in &self.tokenized_lines{
+            if let Token::Label(symbol) = token_stream.first().unwrap(){
+                self.symbol_table.push(Symbol { name: symbol.clone(), offset_from_origin: *number });
+            }
+        }
+        println!("Symbol table: {:#?}", self.symbol_table);
+    }
+
     pub fn tokenize(&mut self) {
         for ln in &self.processed_lines {
             let token_stream = match Token::tokenize_line(ln) {
@@ -577,6 +617,17 @@ impl Assembler {
 
             println!("{:02}     {:?}", ln.actual_line, token_stream);
             self.tokenized_lines.push((token_stream, ln.number));
+        }
+    }
+
+    pub fn trim_lines(&mut self) {
+        let filtered = self.tokenized_lines.clone().into_iter().filter(|tk| {
+            !(tk.0.is_empty() || tk.0.starts_with(&[Token::Directive(String::new())]))
+        }).enumerate();
+
+        self.tokenized_lines.clear();
+        for (index, line) in filtered{
+            self.tokenized_lines.push((line.0, index as u16));
         }
     }
 
@@ -664,6 +715,8 @@ impl Assembler {
     }
 
     pub fn parse_directives(&mut self) {
+        let mut reserved_word_count = 0u16;
+
         for (line, line_offset) in &self.tokenized_lines {
             let line = match line.strip_prefix(&[Token::Label(format!(""))]) {
                 Some(without_label) => without_label,
@@ -681,8 +734,10 @@ impl Assembler {
                         && directive != "END"
                         && *line_offset < (self.end - self.orig)
                     {
-                        panic!("SYNTAX ERROR: Expected .END before directive .{directive} line offset = {}", *line_offset);
+                        println!("WARNING: Expected .END before directive .{directive} line offset = {}", *line_offset);
                     }
+
+                    let line_offset = line_offset + reserved_word_count;
 
                     if directive == "FILL" {
                         match line.next() {
@@ -722,11 +777,27 @@ impl Assembler {
                                         self.orig + line_offset + (text.bytes().len() as u16),
                                         0,
                                     );
+                                    reserved_word_count += text.bytes().len() as u16;
                                 } else {
                                     panic!("NaN");
                                 }
                             }
                             None => println!("Empty."),
+                        }
+                    } else if directive == "BLKW" {
+                        match line.next() {
+                            Some(token) => {
+                                println!("{:?}", token);
+                                if token.is(&Token::HexLiteral(NumberLiteral::new()))
+                                    || token.is(&Token::DecimalLiteral(NumberLiteral::new()))
+                                {
+                                    reserved_word_count += token.as_u16(None);
+                                    println!("Reserving {} words", token.as_u16(None));
+                                } else {
+                                    panic!("BLKW... NaN");
+                                }
+                            }
+                            None => println!("BLKW empty."),
                         }
                     }
                 }
@@ -744,7 +815,107 @@ impl Assembler {
         // }
     }
 
-    pub fn parse_instructions(&mut self) {
+    pub fn parse_directives_to_list(&mut self) -> Vec<(u16, u16)> {
+        let mut memory_writes = Vec::new();
+        let mut reserved_word_count = 0u16;
+        let mut skip_count = 0;
+
+        for (line, line_offset) in &self.tokenized_lines {
+            let line = match line.strip_prefix(&[Token::Label(format!(""))]) {
+                Some(without_label) => without_label,
+                None => line,
+            };
+            //println!("{line_offset} \t {line:?}");
+            let mut line = line.iter().take(2);
+            match match line.next() {
+                Some(val) => val,
+                None => continue,
+            } {
+                &Token::Directive(ref directive) => {
+                    println!("Found directive .{directive} {:0x}+{line_offset:0x} 0x{:03x} '{directive}'", self.orig, self.orig + line_offset);
+                    if directive != "ORIG"
+                        && directive != "END"
+                        && *line_offset < (self.end - self.orig - 2)
+                    {
+                        panic!("SYNTAX ERROR: Expected .END before directive .{directive} line offset = {}", *line_offset);
+                    }
+
+                    let line_offset = line_offset + reserved_word_count;
+
+                    if directive == "FILL" {
+                        match line.next() {
+                            Some(token) => {
+                                println!("{:?}", token);
+                                if token.is(&Token::HexLiteral(NumberLiteral::new()))
+                                    || token.is(&Token::DecimalLiteral(NumberLiteral::new()))
+                                {
+                                    memory_writes
+                                        .push((self.orig + line_offset, token.as_u16(None)));
+                                } else {
+                                    panic!("NaN");
+                                }
+                            }
+                            None => println!("Empty."),
+                        }
+                    } else if directive == "STRINGZ" {
+                        match line.next() {
+                            Some(token) => {
+                                println!("{:?}", token);
+                                if let Token::StringLiteral(text) = token {
+                                    if !text.is_ascii() {
+                                        panic!(
+                                            "StringLiteral '{text}' contains non-ASCII characters."
+                                        );
+                                    }
+
+                                    for (i, ch) in text.bytes().enumerate() {
+                                        memory_writes.push((
+                                            self.orig + line_offset + (i as u16),
+                                            ch as u16,
+                                        ));
+                                    }
+
+                                    //Null term
+                                    memory_writes.push((
+                                        self.orig + line_offset + (text.bytes().len() as u16),
+                                        0,
+                                    ));
+                                    reserved_word_count += text.bytes().len() as u16;
+                                } else {
+                                    panic!("NaN");
+                                }
+                            }
+                            None => println!("Empty."),
+                        }
+                    } else if directive == "BLKW" {
+                        match line.next() {
+                            Some(token) => {
+                                println!("{:?}", token);
+                                if token.is(&Token::HexLiteral(NumberLiteral::new()))
+                                    || token.is(&Token::DecimalLiteral(NumberLiteral::new()))
+                                {
+                                    reserved_word_count += token.as_u16(None);
+                                    println!("Reserving {} words", token.as_u16(None));
+                                } else {
+                                    panic!("BLKW... NaN");
+                                }
+                            }
+                            None => println!("BLKW empty."),
+                        }
+                    }else{
+                        skip_count += 1;
+                    }
+                }
+
+                _ => (skip_count += 1),
+            };
+        }
+        //memory_writes =  memory_writes.into_iter().map(|w|(w.0-1,w.1)).collect();
+        println!("MEM_WRITES: {:?}", memory_writes);
+        memory_writes
+    }
+
+    pub fn parse_instructions_then_run(&mut self, trap_instructions: Option<Vec<TrapInstruction>>) {
         let mut instructions: Vec<u16> = Vec::new();
 
         //println!("\n Removing leading labels.");
@@ -765,18 +936,56 @@ impl Assembler {
         // let filtered_lines = (&self.tokenized_lines)
         //     .into_iter()
         //     .map(|(line, line_offset)| {line.into_iter().map())});
-
         let vm = &mut self.vm;
         vm.set_program_counter(self.orig);
 
+        trap_instructions.map(|x| {
+            for trap in x {
+                vm.write_memory(trap.trap_vector, trap.origin);
+                for (addr, val) in trap.memory_writes {
+                    vm.write_memory(addr, val);
+                }
+                vm.load_binary_into_memory(trap.instructions, trap.origin);
+            }
+        });
+
         vm.load_binary_into_memory(instructions, self.orig);
+
         vm.run_io_thread();
         loop {
             vm.fetch();
             vm.decode();
             vm.execute();
+
+            if !vm.run {
+                break;
+            }
             //Term::stdout().read_char();
         }
+    }
+
+    pub fn parse_instructions(&mut self) -> Vec<u16> {
+        let mut instructions: Vec<u16> = Vec::new();
+
+        //println!("\n Removing leading labels.");
+        for (line, line_offset) in &self.tokenized_lines {
+            let line = match line.strip_prefix(&[Token::Label(format!(""))]) {
+                Some(without_label) => without_label,
+                None => line,
+            };
+            //println!("{line_offset} \t {line:?}");
+            match self.parse_single_instr(line.to_vec(), *line_offset) {
+                None => {}
+                Some(word) => {
+                    instructions.push(word);
+                }
+            }
+        }
+
+        // let filtered_lines = (&self.tokenized_lines)
+        //     .into_iter()
+        //     .map(|(line, line_offset)| {line.into_iter().map())});
+        return instructions;
     }
 
     fn parse_single_instr(&self, line: Vec<Token>, line_offset: u16) -> Option<u16> {
@@ -878,7 +1087,7 @@ impl Assembler {
 
                             if matches!(val.sign, Sign::MINUS) {
                                 println!("Negative imm5. {num}");
-                                num = binary_utils::truncate_to(binary_utils::invert_sign(num), 5) /*+ binary_utils::flag_set_mask(5)*/;
+                                num = binary_utils::truncate_to_bit(binary_utils::invert_sign(num), 5) /*+ binary_utils::flag_set_mask(5)*/;
                             }
                             word += num;
                             word = binary_utils::set_flag_true(word, 5);
@@ -896,7 +1105,8 @@ impl Assembler {
                     if let Token::DecimalLiteral(val) | Token::HexLiteral(val) = &args[k] {
                         let mut num: u16 = val.value;
                         if matches!(val.sign, Sign::MINUS) {
-                            num = binary_utils::truncate_to(binary_utils::invert_sign(num), bits);
+                            num =
+                                binary_utils::truncate_to_bit(binary_utils::invert_sign(num), bits);
                         }
 
                         word += num;
@@ -908,17 +1118,19 @@ impl Assembler {
                 Param::Label => {
                     match &args[k] {
                         Token::Label(lbl) => {
-                            let mut symbol_value = 0;
+                            let mut symbol_value: Option<u16> = None;
+
 
                             for sym in &self.symbol_table {
                                 if sym.name == *lbl {
-                                    symbol_value = sym.offset_from_origin;
+                                    symbol_value = Some(sym.offset_from_origin);
                                 }
                             }
 
-                            if symbol_value == 0 {
+                            if symbol_value == None {
                                 panic!("Undefined label '{lbl}'");
                             }
+                            let symbol_value = symbol_value.unwrap();
 
                             //PC-Offset-9
                             // println!(
@@ -959,9 +1171,7 @@ impl Assembler {
     }
 }
 
-
 pub type SymbolTable = Vec<Symbol>;
-
 
 fn parse_line_for_symbol(line: &SourceLine) -> Option<String> {
     //First remove comments
