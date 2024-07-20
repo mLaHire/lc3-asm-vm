@@ -12,6 +12,7 @@ use std::io::BufReader;
 pub struct Symbol {
     name: String,
     offset_from_origin: u16,
+    size_in_words: u16,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -79,7 +80,7 @@ impl Token {
         };
 
         match param {
-            Param::Label | Param::LabelLiteral => return self.is(&Token::Label(String::new())),
+            Param::Label | Param::Label6bit => return self.is(&Token::Label(String::new())),
 
             Param::Register(_) => return self.is(&Token::Register(0)),
 
@@ -93,7 +94,7 @@ impl Token {
 
             Param::Imm5 => {
                 panic!("INTERNAL ERROR: \tUnexpected instr to be defined as having imm5.")
-            },
+            }
 
             Param::RegisterORImm5 => {
                 return self.is(&Token::Register(0))
@@ -104,8 +105,6 @@ impl Token {
                         _ => false,
                     };
             }
-
-            
         }
     }
 
@@ -487,6 +486,8 @@ pub struct Assembler {
     end: u16,
 }
 
+impl Assembler {}
+
 impl Assembler {
     pub fn new(path: &str) -> Self {
         Self {
@@ -587,6 +588,7 @@ impl Assembler {
                         .number
                         .try_into()
                         .expect("Unable to convert usize->u16"),
+                    size_in_words: 1,
                 });
             });
         }
@@ -594,11 +596,15 @@ impl Assembler {
         table
     }
 
-    pub fn load_symbols(&mut self){
+    pub fn load_symbols(&mut self) {
         self.trim_lines();
-        for (token_stream, number) in &self.tokenized_lines{
-            if let Token::Label(symbol) = token_stream.first().unwrap(){
-                self.symbol_table.push(Symbol { name: symbol.clone(), offset_from_origin: *number });
+        for (token_stream, number) in &self.tokenized_lines {
+            if let Token::Label(symbol) = token_stream.first().unwrap() {
+                self.symbol_table.push(Symbol {
+                    name: symbol.clone(),
+                    offset_from_origin: *number,
+                    size_in_words: 1,
+                });
             }
         }
         println!("Symbol table: {:#?}", self.symbol_table);
@@ -623,12 +629,15 @@ impl Assembler {
     }
 
     pub fn trim_lines(&mut self) {
-        let filtered = self.tokenized_lines.clone().into_iter().filter(|tk| {
-            !(tk.0.is_empty() || tk.0.starts_with(&[Token::Directive(String::new())]))
-        }).enumerate();
+        let filtered = self
+            .tokenized_lines
+            .clone()
+            .into_iter()
+            .filter(|tk| !(tk.0.is_empty() || tk.0.starts_with(&[Token::Directive(String::new())])))
+            .enumerate();
 
         self.tokenized_lines.clear();
-        for (index, line) in filtered{
+        for (index, line) in filtered {
             self.tokenized_lines.push((line.0, index as u16));
         }
     }
@@ -736,8 +745,13 @@ impl Assembler {
                         && directive != "END"
                         && *line_offset < (self.end - self.orig)
                     {
-                        println!("WARNING: Expected .END before directive .{directive} line offset = {}", *line_offset);
+                        println!(
+                            "WARNING: Expected .END before directive .{directive} line offset = {}",
+                            *line_offset
+                        );
                     }
+
+                    let unadjusted_offset = *line_offset;
 
                     let line_offset = line_offset + reserved_word_count;
 
@@ -780,6 +794,11 @@ impl Assembler {
                                         0,
                                     );
                                     reserved_word_count += text.bytes().len() as u16;
+                                    for sym in &mut self.symbol_table {
+                                        if sym.offset_from_origin == unadjusted_offset {
+                                            sym.size_in_words = 1 + text.bytes().len() as u16;
+                                        }
+                                    }
                                 } else {
                                     panic!("NaN");
                                 }
@@ -815,6 +834,17 @@ impl Assembler {
         // for ln in &self.tokenized_lines {
         //     let token_stream = &ln.0;
         // }
+    }
+
+    pub fn adjust_symbols(&mut self) {
+        let mut cummulative_offset = 0;
+        for symbol in &mut self.symbol_table {
+            symbol.offset_from_origin += cummulative_offset;
+            if symbol.size_in_words > 1 {
+                cummulative_offset += symbol.size_in_words - 1;
+            }
+        }
+        println!("Adjusted symbol table: {:#?}", self.symbol_table);
     }
 
     pub fn parse_directives_to_list(&mut self) -> Vec<(u16, u16)> {
@@ -904,7 +934,7 @@ impl Assembler {
                             }
                             None => println!("BLKW empty."),
                         }
-                    }else{
+                    } else {
                         skip_count += 1;
                     }
                 }
@@ -1100,7 +1130,7 @@ impl Assembler {
                         }
                         _ => panic!(),
                     }
-                },
+                }
 
                 Param::Bits(bits) => {
                     //match &args[k] {
@@ -1113,19 +1143,18 @@ impl Assembler {
 
                         word += num;
                     }
-                   // };
+                    // };
                     // if let Token::Label(s) = &args[k]{
-                        
+
                     // }
                     //     _ => panic!(),
                     // }
-                },
+                }
 
                 Param::Label => {
                     match &args[k] {
                         Token::Label(lbl) => {
                             let mut symbol_value: Option<u16> = None;
-
 
                             for sym in &self.symbol_table {
                                 if sym.name == *lbl {
@@ -1139,23 +1168,23 @@ impl Assembler {
                             let symbol_value = symbol_value.unwrap();
 
                             //PC-Offset-9
-                            // println!(
-                            //     "Label: {symbol_value}, PC: {line_offset}. L-PC = {}",
-                            //     binary_utils::as_negative_i16(binary_utils::add_2s_complement(
-                            //         symbol_value,
-                            //         binary_utils::invert_sign(line_offset + 1)
-                            //     ))
-                            // );
+                            println!(
+                                "Label: {symbol_value}, PC: {line_offset}. L-PC = {}",
+                                binary_utils::as_negative_i16(binary_utils::add_2s_complement(
+                                    symbol_value,
+                                    binary_utils::invert_sign(line_offset)
+                                ))
+                            );
 
-                            let pc_offset_9 = binary_utils::add_2s_complement(
-                                symbol_value,
-                                binary_utils::invert_sign(line_offset+1),
-                            ) << 7
-                                >> 7;
+                            let mut pc_offset_9 = binary_utils::truncate_to_n_bit(binary_utils::add_2s_complement(
+                                    symbol_value,
+                                    binary_utils::invert_sign(line_offset+1),),10) /*<< 7
+                                    >> 7*/
+                            ;
                             //WARNING
 
                             // if binary_utils::is_negative(pc_offset_9){
-                            //     pc_offset_9 = (binary_utils::set_flag_true(pc_offset_9, 8) << 9 ) >> 9;
+                            //     pc_offset_9 = (binary_utils::set_flag_true(pc_offset_9, 8) << 7 ) >> 7;
                             // }
 
                             // println!(
@@ -1167,7 +1196,7 @@ impl Assembler {
 
                         _ => panic!(),
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -1341,6 +1370,13 @@ impl Parser {
             String::from("JMP"),
             InstrDef::new(OP::JMP, 0, vec![Param::Label]),
         );
+
+        let nzp = flag_set_mask(10) + flag_set_mask(9) + flag_set_mask(11);
+
+        instr_set.insert(
+            String::from("RET"),
+            InstrDef::new(OP::BR, 0b0000_000_111_000000, vec![]),
+        );
         instr_set.insert(
             String::from("JSR"),
             InstrDef::new(OP::JSR, binary_utils::flag_set_mask(11), vec![Param::Label]),
@@ -1400,7 +1436,7 @@ impl Parser {
             InstrDef::new(
                 OP::STR,
                 0,
-                vec![Param::Register(9), Param::Register(6), Param::Bits(6)],
+                vec![Param::Register(9), Param::Register(6), Param::Label6bit],
             ),
         );
 
@@ -1419,7 +1455,7 @@ pub enum Param {
     Bits(u16),
     Register(u16), /*Lower bit [val -> val+2] */
     Label,
-    LabelLiteral,
+    Label6bit,
     RegisterORImm5,
     Imm5,
 }

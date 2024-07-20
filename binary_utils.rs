@@ -139,6 +139,9 @@ pub fn as_negative_i16(word: u16) -> i16 {
 
 //2's complenet
 pub fn invert_sign(word: u16) -> u16 {
+    if word == 0 {
+        return 0;
+    }
     word.not() + 1
 }
 
@@ -186,7 +189,6 @@ pub fn add_2s_complement(word_1: u16, word_2: u16) -> u16 {
     sum
 }
 
-
 pub fn sign_extend(word: u16, most_significant_bit: u16) -> u16 {
     if isolate_bit(word, most_significant_bit) == 0 {
         // println!("not negative");
@@ -211,7 +213,7 @@ pub fn truncate_to_bit(word: u16, bit: u16) -> u16 {
 
 pub fn truncate_to_n_bit(word: u16, n: u16) -> u16 {
     let mut result = word;
-    for i in (n-1)..16 {
+    for i in (n - 1)..16 {
         result = set_flag_false(result, i);
     }
     result
