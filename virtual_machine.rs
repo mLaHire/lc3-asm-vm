@@ -156,7 +156,7 @@ impl VirtualMachine {
             registers: Registers::new(),
 
             run: true,
-            debug_enabled: false,
+            debug_enabled: true,
 
             program_counter: PC_START,
         }
@@ -436,6 +436,7 @@ impl VirtualMachine {
             OP::LDI => self.execute_op_ldi(instr),
             OP::TRAP => self.execute_op_trap(instr),
             OP::JMP => self.execute_op_jmp(instr),
+            OP::LEA => self.execute_op_lea(instr),
             OP::RES => self.run = false,
             _ => panic!("No valid instruction."),
         }
@@ -605,6 +606,18 @@ impl VirtualMachine {
         self.set_reg(dest_reg, value);
     }
 
+    fn execute_op_lea(&mut self, instr: u16) {
+        let dest_reg = get_register_at(instr, (9, 11));
+
+        let pc_offset_9_ext = get_sign_ext_value(instr, 9);
+
+        /*dbg!(self.program_counter + pc_offset_9_ext);
+        dbg!(self.read_memory(self.program_counter + pc_offset_9_ext));*/
+        let address = self.program_counter + pc_offset_9_ext;
+        
+        self.set_reg(dest_reg, address);
+    }
+
     fn execute_op_ldi(&mut self, instr: u16) {
         let dest_reg = get_register_at(instr, (9, 11));
 
@@ -631,12 +644,14 @@ impl VirtualMachine {
     }
 
     fn execute_op_trap(&mut self, instr: u16){
-        if self.debug_enabled {println!("[TRAP]\tEXECUTING TRAP");}
+       
         let trap_vector = binary_utils::truncate_to_n_bit(instr, 8);
         if ! trap_vector <= 0xff{
             panic!("TRAP vector 0x{trap_vector:04X} must be <= 0x00FF");
         }
+        
         let address_of_subroutine = self.read_memory(trap_vector);
+        if self.debug_enabled {println!("[TRAP]\tEXECUTING TRAP 0x{trap_vector:x} ---> 0x{address_of_subroutine:x}");}
         self.set_reg(7, self.program_counter);
         self.program_counter = address_of_subroutine;
         //let 

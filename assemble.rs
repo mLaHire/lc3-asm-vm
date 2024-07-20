@@ -79,7 +79,7 @@ impl Token {
         };
 
         match param {
-            Param::Label => return self.is(&Token::Label(String::new())),
+            Param::Label | Param::LabelLiteral => return self.is(&Token::Label(String::new())),
 
             Param::Register(_) => return self.is(&Token::Register(0)),
 
@@ -93,7 +93,7 @@ impl Token {
 
             Param::Imm5 => {
                 panic!("INTERNAL ERROR: \tUnexpected instr to be defined as having imm5.")
-            }
+            },
 
             Param::RegisterORImm5 => {
                 return self.is(&Token::Register(0))
@@ -104,6 +104,8 @@ impl Token {
                         _ => false,
                     };
             }
+
+            
         }
     }
 
@@ -1098,7 +1100,7 @@ impl Assembler {
                         }
                         _ => panic!(),
                     }
-                }
+                },
 
                 Param::Bits(bits) => {
                     //match &args[k] {
@@ -1110,10 +1112,14 @@ impl Assembler {
                         }
 
                         word += num;
-                    };
+                    }
+                   // };
+                    // if let Token::Label(s) = &args[k]{
+                        
+                    // }
                     //     _ => panic!(),
                     // }
-                }
+                },
 
                 Param::Label => {
                     match &args[k] {
@@ -1143,7 +1149,7 @@ impl Assembler {
 
                             let pc_offset_9 = binary_utils::add_2s_complement(
                                 symbol_value,
-                                binary_utils::invert_sign(line_offset + 1),
+                                binary_utils::invert_sign(line_offset+1),
                             ) << 7
                                 >> 7;
                             //WARNING
@@ -1161,7 +1167,7 @@ impl Assembler {
 
                         _ => panic!(),
                     }
-                }
+                },
                 _ => {}
             }
         }
@@ -1413,6 +1419,7 @@ pub enum Param {
     Bits(u16),
     Register(u16), /*Lower bit [val -> val+2] */
     Label,
+    LabelLiteral,
     RegisterORImm5,
     Imm5,
 }
