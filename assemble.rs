@@ -965,6 +965,7 @@ impl Assembler {
             vm.execute();
 
             if !vm.run {
+                thread::sleep(time::Duration::from_millis(50));
                 break;
             }
             //Term::stdout().read_char();
