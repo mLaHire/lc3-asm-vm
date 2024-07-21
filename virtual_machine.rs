@@ -492,6 +492,7 @@ impl VirtualMachine {
             OP::JMP => self.execute_op_jmp(instr),
             OP::LEA => self.execute_op_lea(instr),
             OP::LDR => self.execute_op_ldr(instr),
+            OP::STR => self.execute_op_str(instr),
             OP::RES => self.run = false,
             _ => panic!("No valid instruction."),
         }
@@ -678,6 +679,23 @@ impl VirtualMachine {
         let value = self.read_memory(address);
         self.update_condition(value);
         self.set_reg(dest_reg, value);
+    }
+
+    fn execute_op_str(&mut self, instr: u16) {
+        let src_reg = get_register_at(instr, (9, 11));
+        let base_reg = get_register_at(instr, (6, 8));
+
+        let offset_6_ext = get_sign_ext_value(instr, 6);
+
+        /*dbg!(self.program_counter + pc_offset_9_ext);
+        dbg!(self.read_memory(self.program_counter + pc_offset_9_ext));*/
+        // dbg!(offset_6_ext);
+        let address = binary_utils::add_2s_complement(self.read_reg(base_reg), offset_6_ext);
+        let src_reg_value = self.read_reg(src_reg);
+        self.write_memory(address, src_reg_value);
+        // let value = self.read_memory(address);
+        // self.update_condition(value);
+        // self.set_reg(dest_reg, value);
     }
 
     fn execute_op_lea(&mut self, instr: u16) {

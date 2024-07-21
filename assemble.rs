@@ -717,7 +717,7 @@ impl Assembler {
                     println!("Found directive {line:?} '{directive}'");
                     if directive != "ORIG"
                         && directive != "END"
-                        && *line_offset < (self.end - self.orig)
+                        && *line_offset < (self.end - self.orig + 2)
                     {
                         println!(
                             "WARNING: Expected .END before directive .{directive} line offset = {}",
@@ -843,7 +843,10 @@ impl Assembler {
                         && directive != "END"
                         && *line_offset < (self.end - self.orig - 2)
                     {
-                        panic!("SYNTAX ERROR: Expected .END before directive .{directive} line offset = {}", *line_offset);
+                        println!(
+                            "WARNING: Expected .END before directive .{directive} line offset = {}",
+                            *line_offset
+                        );
                     }
 
                     let line_offset = line_offset + reserved_word_count;
@@ -1372,7 +1375,7 @@ impl Parser {
             InstrDef::new(
                 OP::STR,
                 0,
-                vec![Param::Register(9), Param::Register(6), Param::Label6bit],
+                vec![Param::Register(9), Param::Register(6), Param::Bits(6)],
             ),
         );
 
