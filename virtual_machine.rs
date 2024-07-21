@@ -186,6 +186,7 @@ impl VirtualMachine {
                             if count > 10 {
                                 println!("[IO] Waiting for display_reg_mutex. {e}");
                             }
+                            thread::sleep(time::Duration::from_millis(5 + count));
                             continue;
                         }
 
@@ -207,6 +208,7 @@ impl VirtualMachine {
                         panic!("[IO ERROR] Non-ascii character in DDR.");
                     }
                     //println!("[IO]\tDisplaying {:08b} ASCII {}", binary_utils::truncate_to_bit((*display).data, 7), binary_utils::truncate_to_bit((*display).data, 7));
+
                     match term.write(&[binary_utils::truncate_to_bit((*display).data, 7) as u8]) {
                         Ok(_) => {
                             (*display).signal = 0x8000;
@@ -236,9 +238,24 @@ impl VirtualMachine {
                 //     char::from_u32(input_char as u32).unwrap()
                 // );
 
-                let mut kb_regs = kb_registers
-                    .try_lock()
-                    .expect("[IO] Keyboard registers locked.");
+                let mut attempt_count = 0;
+                let mut kb_regs = loop {
+                    let lock_attempt = kb_registers.try_lock();
+                    match lock_attempt {
+                        Err(e) => {
+                            if attempt_count > 10 {
+                                println!("[IO] Waiting for keyboard_register_mutex. {e}");
+                            }
+                            attempt_count += 1;
+                            thread::sleep(time::Duration::from_millis(5 + attempt_count));
+                            continue;
+                        }
+
+                        Ok(lock) => {
+                            break lock;
+                        }
+                    }
+                };
 
                 if !binary_utils::flag_is_set((*kb_regs).signal, 15) {
                     //println!("[IO]\tChar input recived. KBSR is clear. Updating KBSR and KBDR");
@@ -249,7 +266,7 @@ impl VirtualMachine {
                 }
                 drop(kb_regs);
                 //println!("[IO] Dropped kb_regs.");
-                thread::sleep(time::Duration::from_millis(100));
+                thread::sleep(time::Duration::from_millis(10));
             }
         });
     }
@@ -282,16 +299,21 @@ impl VirtualMachine {
             if self.debug_enabled {
                 println!("\t\t(!)\tReading Keyboard Registers (SIGNAL)...(!)\t");
             }
-            thread::sleep(time::Duration::from_millis(10));
+
             // let kb_reg = self
             //     .keyboard_reg_mutex
             //     .try_lock();
             //     .expect("[CPU]\t[KBSR READ] Failed to lock Keyboard Registers.");
+            let mut attempt_count = 0;
             let kb_reg = loop {
                 let lock_attempt = self.keyboard_reg_mutex.try_lock();
                 match lock_attempt {
                     Err(e) => {
-                        println!("[CPU] Waiting for keyboard_register_mutex. {e}");
+                        if attempt_count > 10 {
+                            println!("[CPU] Waiting for keyboard_register_mutex. {e}");
+                        }
+                        attempt_count += 1;
+                        thread::sleep(time::Duration::from_millis(5 + attempt_count));
                         continue;
                     }
 
@@ -329,11 +351,18 @@ impl VirtualMachine {
             .display_reg_mutex
             .try_lock()
             .expect("[CPU] Failed to lock disp_reg (signal)");*/
+            let mut attempt_count = 0;
             let disp_reg = loop {
                 let lock_attempt = self.display_reg_mutex.try_lock();
+
                 match lock_attempt {
                     Err(e) => {
-                        println!("[CPU] Waiting for display_reg_mutex. {e}");
+                        attempt_count += 1;
+                        if attempt_count > 10 {
+                            println!("[CPU] [READ] Waiting for display_reg_mutex. {e}");
+                        }
+
+                        thread::sleep(time::Duration::from_millis(5 + attempt_count));
                         continue;
                     }
 
@@ -387,14 +416,23 @@ impl VirtualMachine {
         }
 
         if address == self.ddr_address {
-            let mut disp_reg = self
-                .display_reg_mutex
-                .try_lock()
-                .expect("[CPU][WRITE MEM]\tUnable to lock ddr_reg.");
+            let mut disp_reg = loop {
+                let lock_attempt = self.display_reg_mutex.try_lock();
+                match lock_attempt {
+                    Err(e) => {
+                        println!("[CPU] [WRITE] Waiting for display_reg_mutex. {e}");
+                        thread::sleep(time::Duration::from_millis(10));
+                        continue;
+                    }
+
+                    Ok(lock) => {
+                        break lock;
+                    }
+                }
+            };
             (*disp_reg).data = value;
             (*disp_reg).signal = 0; //Clear DSR; not ready for another char
             drop(disp_reg);
-            thread::sleep(time::Duration::from_millis(100));
         }
 
         let address: usize = address
@@ -490,7 +528,7 @@ impl VirtualMachine {
             15 => OP::TRAP,
 
             _ => {
-                println!("HALT.");
+                //println!("\n[CPU]\tHALT");
                 OP::RES
                 //panic!("Invalid instruction. {opcode_4bit:04b}");
             }

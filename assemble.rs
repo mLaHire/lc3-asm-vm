@@ -7,6 +7,8 @@ use io::BufRead;
 use std::fs::File;
 use std::io;
 use std::io::BufReader;
+use std::thread;
+use std::time;
 
 #[derive(Debug)]
 pub struct Symbol {
@@ -568,34 +570,6 @@ impl Assembler {
         result
     }
 
-    pub fn build_symbol_table(lines: &Vec<SourceLine>) -> SymbolTable {
-        todo!();
-        let mut table: SymbolTable = Vec::new();
-
-        for line in lines {
-            parse_line_for_symbol(&line).map(|name| {
-                if table
-                    .iter()
-                    .map(|s| s.name.clone())
-                    .collect::<Vec<String>>()
-                    .contains(&name)
-                {
-                    panic!("ASM ERROR: Symbol {} defined twice.", name);
-                }
-                table.push(Symbol {
-                    name: name.clone(),
-                    offset_from_origin: line
-                        .number
-                        .try_into()
-                        .expect("Unable to convert usize->u16"),
-                    size_in_words: 1,
-                });
-            });
-        }
-
-        table
-    }
-
     pub fn load_symbols(&mut self) {
         self.trim_lines();
         for (token_stream, number) in &self.tokenized_lines {
@@ -984,6 +958,7 @@ impl Assembler {
         vm.load_binary_into_memory(instructions, self.orig);
 
         vm.run_io_thread();
+        thread::sleep(time::Duration::from_millis(50));
         loop {
             vm.fetch();
             vm.decode();
@@ -1207,46 +1182,6 @@ impl Assembler {
 }
 
 pub type SymbolTable = Vec<Symbol>;
-
-fn parse_line_for_symbol(line: &SourceLine) -> Option<String> {
-    //First remove comments
-    //let mut contains_comment = false;
-
-    let mut ln = String::new();
-
-    for ch in line.text.chars() {
-        if ch == ';' {
-            break;
-        }
-        ln.push(ch);
-    }
-
-    if ln.len() == 0 {
-        return None;
-    }
-
-    let first_part = match ln.split_whitespace().next() {
-        None => return None,
-        Some(s) => s.trim(),
-    };
-
-    if first_part.is_empty() || first_part.starts_with(".") || is_instruction(first_part) {
-        return None;
-    }
-
-    match first_part.chars().next() {
-        Some(c) => {
-            if c.is_numeric() || c == 'x' || !c.is_alphabetic() {
-                return None;
-            }
-        }
-        None => {
-            panic!("Error");
-        }
-    }
-
-    Some(String::from(first_part))
-}
 
 fn is_instruction(s: &str) -> bool {
     vec![
