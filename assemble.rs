@@ -464,6 +464,7 @@ impl TrapInstruction {
             Ok(r) => println!("TRAP Program\t.ORIG {:x}\t.END{:x}", r.0, r.1),
         };
         asm.load_symbols();
+        asm.adjust_symbols();
         //asm.trim_lines();
         let memory_writes = asm.parse_directives_to_list();
         let instructions = asm.parse_instructions();
@@ -483,7 +484,7 @@ pub struct Assembler {
     tokenized_lines: Vec<(Vec<Token>, u16)>,
     symbol_table: SymbolTable,
     instruction_set: HashMap<String, InstrDef>,
-    vm: virtual_machine::VirtualMachine,
+    pub vm: virtual_machine::VirtualMachine,
     pub orig: u16,
     end: u16,
 }
@@ -700,12 +701,24 @@ impl Assembler {
     }
 
     pub fn parse_directives(&mut self) {
+        let parsed = self.parse_directives_to_list();
+        for (addr, val) in parsed.iter() {
+            self.vm.write_memory(*addr, *val);
+        }
+    }
+
+    pub fn __parse_directives(&mut self) {
+        todo!("Obsolete");
+        println!("[ASM]\tParsing directives...");
         let mut reserved_word_count = 0u16;
 
-        for (line, line_offset) in &self.tokenized_lines {
-            let line = match line.strip_prefix(&[Token::Label(format!(""))]) {
-                Some(without_label) => without_label,
-                None => line,
+        for (line_, line_offset) in &self.tokenized_lines {
+            let line = match line_.strip_prefix(&[Token::Label(format!(""))]) {
+                Some(without_label) => {
+                    print!("LABEL: {:?}\t", line_.first().unwrap());
+                    without_label
+                }
+                None => line_,
             };
             //println!("{line_offset} \t {line:?}");
             let mut line = line.iter().take(2);
@@ -714,15 +727,15 @@ impl Assembler {
                 None => continue,
             } {
                 &Token::Directive(ref directive) => {
-                    println!("Found directive {line:?} '{directive}'");
+                    //println!("Found directive {line:?} '{directive}'");
                     if directive != "ORIG"
                         && directive != "END"
                         && *line_offset < (self.end - self.orig + 2)
                     {
-                        println!(
-                            "WARNING: Expected .END before directive .{directive} line offset = {}",
-                            *line_offset
-                        );
+                        // println!(
+                        //     "WARNING: Expected .END before directive .{directive} line offset = {}",
+                        //     *line_offset
+                        // );
                     }
 
                     let unadjusted_offset = *line_offset;
@@ -732,7 +745,7 @@ impl Assembler {
                     if directive == "FILL" {
                         match line.next() {
                             Some(token) => {
-                                println!("{:?}", token);
+                                //println!("{:?}", token);
                                 if token.is(&Token::HexLiteral(NumberLiteral::new()))
                                     || token.is(&Token::DecimalLiteral(NumberLiteral::new()))
                                 {
@@ -826,10 +839,13 @@ impl Assembler {
         let mut reserved_word_count = 0u16;
         let mut skip_count = 0;
 
-        for (line, line_offset) in &self.tokenized_lines {
-            let line = match line.strip_prefix(&[Token::Label(format!(""))]) {
-                Some(without_label) => without_label,
-                None => line,
+        for (line_, line_offset) in &self.tokenized_lines {
+            let line = match line_.strip_prefix(&[Token::Label(format!(""))]) {
+                Some(without_label) => {
+                    println!("LABEL: {:?}\t", line_.first().unwrap());
+                    without_label
+                }
+                None => line_,
             };
             //println!("{line_offset} \t {line:?}");
             let mut line = line.iter().take(2);
@@ -841,20 +857,22 @@ impl Assembler {
                     println!("Found directive .{directive} {:0x}+{line_offset:0x} 0x{:03x} '{directive}'", self.orig, self.orig + line_offset);
                     if directive != "ORIG"
                         && directive != "END"
-                        && *line_offset < (self.end - self.orig - 2)
+                        && *line_offset < (self.end - self.orig/*  - 2*/)
+                    //CAUSED A BUG(!)
                     {
-                        println!(
-                            "WARNING: Expected .END before directive .{directive} line offset = {}",
-                            *line_offset
-                        );
+                        // println!(
+                        //     "WARNING: Expected .END before directive .{directive} line offset = {}",
+                        //     *line_offset
+                        // );
                     }
 
+                    let unadjusted_offset = *line_offset;
                     let line_offset = line_offset + reserved_word_count;
 
                     if directive == "FILL" {
                         match line.next() {
                             Some(token) => {
-                                println!("{:?}", token);
+                                //println!("{:?}", token);
                                 if token.is(&Token::HexLiteral(NumberLiteral::new()))
                                     || token.is(&Token::DecimalLiteral(NumberLiteral::new()))
                                 {
@@ -869,7 +887,7 @@ impl Assembler {
                     } else if directive == "STRINGZ" {
                         match line.next() {
                             Some(token) => {
-                                println!("{:?}", token);
+                                // println!("{:?}", token);
                                 if let Token::StringLiteral(text) = token {
                                     if !text.is_ascii() {
                                         panic!(
@@ -877,11 +895,14 @@ impl Assembler {
                                         );
                                     }
 
+                                    
+
                                     for (i, ch) in text.bytes().enumerate() {
                                         memory_writes.push((
                                             self.orig + line_offset + (i as u16),
                                             ch as u16,
                                         ));
+                                        println!("\t'{}' --> 0x{:04x}", std::str::from_utf8(&[ch]).unwrap(), self.orig + line_offset + (i as u16) );
                                     }
 
                                     //Null term
@@ -889,7 +910,13 @@ impl Assembler {
                                         self.orig + line_offset + (text.bytes().len() as u16),
                                         0,
                                     ));
-                                    reserved_word_count += text.bytes().len() as u16;
+                                    println!("\t'\\0' --> 0x{:04x}\n", self.orig + line_offset + (text.bytes().len() as u16));
+                                    reserved_word_count += text.bytes().len()  as u16;
+                                    for sym in &mut self.symbol_table {
+                                        if sym.offset_from_origin == unadjusted_offset {
+                                            sym.size_in_words = 1 + text.bytes().len() as u16;
+                                        }
+                                    }
                                 } else {
                                     panic!("NaN");
                                 }
@@ -899,11 +926,14 @@ impl Assembler {
                     } else if directive == "BLKW" {
                         match line.next() {
                             Some(token) => {
-                                println!("{:?}", token);
+                                //println!("{:?}", token);
                                 if token.is(&Token::HexLiteral(NumberLiteral::new()))
                                     || token.is(&Token::DecimalLiteral(NumberLiteral::new()))
                                 {
-                                    reserved_word_count += token.as_u16(None);
+                                    let size_of_block = token.as_u16(None);
+                                    if size_of_block > 1 {
+                                        reserved_word_count += size_of_block - 1;
+                                    }
                                     println!("Reserving {} words", token.as_u16(None));
                                 } else {
                                     panic!("BLKW... NaN");
@@ -946,7 +976,7 @@ impl Assembler {
         //     .into_iter()
         //     .map(|(line, line_offset)| {line.into_iter().map())});
         let vm = &mut self.vm;
-        vm.set_program_counter(self.orig);
+        vm.set_program_origin(self.orig);
 
         trap_instructions.map(|x| {
             for trap in x {

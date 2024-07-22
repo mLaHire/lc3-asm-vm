@@ -6,9 +6,13 @@ LOOP    ADD R2, R2, R1
         BRp LOOP
 END     ST R2, ANS
         LD R0, ANS
+        LD R3, TOASCII
+        ADD R0, R0, R3
+        TRAP x21
         HALT
         .END
-;
-A       .FILL #7
-B       .FILL #0
+A       .FILL #2
+B       .FILL #3
 ANS       .FILL #0
+TOASCII         .FILL #48
+TONUMBER        .FILL #-48

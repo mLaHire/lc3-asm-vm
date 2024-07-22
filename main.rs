@@ -20,6 +20,13 @@ fn main() {
 
     let mut path = String::from(".\\src\\asm-files\\");
     path.push_str(&buffer);
+    print!("Debug_enabled? (y/n)");
+
+    let mut debug_enabled = match Term::stdout().read_line() {
+        Ok(p) => p,
+        Err(e) => panic!("{e}"),
+    }.trim()
+    .to_owned().contains("y");
 
     let mut asm = assemble::Assembler::new(&path);
     asm.load();
@@ -32,6 +39,7 @@ fn main() {
 
     asm.parse_directives();
     asm.adjust_symbols();
+    asm.vm.debug_enabled = debug_enabled;
     asm.parse_instructions_then_run(Some(vec![putc_x21, puts_x22, getc_x23]));
 
     return;

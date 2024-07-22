@@ -122,6 +122,7 @@ pub struct VirtualMachine {
     pub debug_enabled: bool,
 
     program_counter: u16,
+    origin: u16,
     instruction: Instruction,
 }
 
@@ -156,14 +157,16 @@ impl VirtualMachine {
             registers: Registers::new(),
 
             run: true,
-            debug_enabled: false,
+            debug_enabled: true,
 
             program_counter: PC_START,
+            origin: 0,
         }
     }
 
-    pub fn set_program_counter(&mut self, pc: u16) {
+    pub fn set_program_origin(&mut self, pc: u16) {
         self.program_counter = pc;
+        self.origin = pc;
     }
 
     pub fn run_io_thread(&mut self) {
@@ -441,7 +444,10 @@ impl VirtualMachine {
 
         self.memory[address] = value;
         if self.debug_enabled {
-            println!("[WRITE]\t{:016b} --> {:0x}", value, address)
+            println!(
+                "[WRITE]\t0x{value:04x}\t--> MEM[0x{:04x}   #{address:06}]",
+                address
+            );
         };
     }
 
@@ -462,8 +468,11 @@ impl VirtualMachine {
 
         if self.debug_enabled {
             println!(
-                "[0x{:04x} @{:05}]\t{opcode:?} \t {:016b}",
-                self.program_counter as usize, self.program_counter, self.instruction.word
+                //@{:05}
+                "[0x{:04x}\t0+0x{:03x}]\t\t{opcode:?}\t{:016b}",
+                self.program_counter as usize,
+                (self.program_counter as i32 - self.origin as i32),
+                /*self.program_counter,*/ self.instruction.word
             );
         }
         self.program_counter += 1;

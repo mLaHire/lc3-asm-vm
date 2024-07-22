@@ -6,12 +6,15 @@ PRINT       TRAP x21
             LDR R0, R1, #0
             BRz EXIT
             BRnzp PRINT
-EXIT        LEA R1, B
+EXIT        LEA R1, N
             LDR R0, R1, #0
+            TRAP x21
+            LD R0, LETTER
             TRAP x21
             HALT
             .END
-A         .STRINGZ "Hello world!"
-B           .FILL #10
+A           .STRINGZ "Hello world! Another message..."
+OUT         .STRINGZ "MSG"
+N          .FILL #10
 C           .STRINGZ "C"
-NEWLINE     .FILL #97
+LETTER     .FILL #97
