@@ -176,7 +176,7 @@ impl VirtualMachine {
         let disp_registers = self.display_reg_mutex.clone();
 
         println!("[IO]\tStarting IO threads...");
-        let mut output_server = thread::spawn(move || {
+        thread::spawn(move || {
             let mut term = Term::stdout();
             //println!("[IO]\tStarting output server.");
             let mut count = 0;
@@ -207,8 +207,9 @@ impl VirtualMachine {
                     //There is a char to read from DDR which has not been displayed yet.
                     //(*display).signal = 1;
                     if display.data > 127 {
+                        let ch: String = String::from_utf16_lossy(&[display.data]);
                         drop(display);
-                        panic!("[IO ERROR] Non-ascii character in DDR.");
+                        panic!("[IO ERROR] Non-ascii character '{}' in DDR.", ch);
                     }
                     //println!("[IO]\tDisplaying {:08b} ASCII {}", binary_utils::truncate_to_bit((*display).data, 7), binary_utils::truncate_to_bit((*display).data, 7));
 
@@ -404,7 +405,7 @@ impl VirtualMachine {
 
     pub fn write_memory(&mut self, address: u16, value: u16) {
         if address >= MAX_MEMORY {
-            panic!("Cannot access memory out of bounds");
+            panic!("[WRITE]\tCannot access memory out of bounds/");
         }
 
         if address == self.kbsr_address {
@@ -623,7 +624,7 @@ impl VirtualMachine {
         } else {
             if self.debug_enabled {
                 println!(
-                    "[CPU]\tNot branching, continuing to 0x{:04x}",
+                    "[CPU]\t\tNot branching, continuing to 0x{:04x}",
                     self.program_counter + 1
                 );
             }
@@ -714,7 +715,7 @@ impl VirtualMachine {
 
         /*dbg!(self.program_counter + pc_offset_9_ext);
         dbg!(self.read_memory(self.program_counter + pc_offset_9_ext));*/
-        let address = self.program_counter + pc_offset_9_ext;
+        let address = binary_utils::add_2s_complement(self.program_counter, pc_offset_9_ext);
         self.update_condition(address);
         self.set_reg(dest_reg, address);
     }
@@ -751,29 +752,19 @@ impl VirtualMachine {
         }
 
         let address_of_subroutine = self.read_memory(trap_vector);
-        //if true {println!("[TRAP]\tEXECUTING TRAP 0x{trap_vector:x} ---> 0x{address_of_subroutine:x}");}
+        if self.debug_enabled {
+            println!("[CPU]\t[TRAP]\tEXECUTING TRAP (0x{trap_vector:x}) Called at 0x{:x} ---> 0x{address_of_subroutine:x}", self.program_counter - 1);
+        }
         self.set_reg(7, self.program_counter);
         self.program_counter = address_of_subroutine;
         //let
     }
 
     pub fn set_reg(&mut self, register: u16, value: u16) {
-        self.registers.set(
-            match register {
-                0 => 0,
-                1 => 1,
-                2 => 2,
-                3 => 3,
-                4 => 3,
-                5 => 5,
-                6 => 6,
-                7 => 7,
-                _ => {
-                    panic!("Invalid write_register R{register}.")
-                }
-            },
-            value,
-        );
+        if register > 7 {
+            panic!("Invalid write_register R{register}.")
+        }
+        self.registers.set(register, value);
     }
 
     pub fn update_condition(&mut self, result: u16) {
@@ -785,23 +776,14 @@ impl VirtualMachine {
             self.registers.condition = ConditionCode::POSITIVE;
         }
         if self.debug_enabled {
-            println!("Updated condtion code: {:?}", self.registers.condition);
+            println!("[CPU]\t{:?}", self.registers.condition);
         }
     }
 
     pub fn read_reg(&mut self, register: u16) -> u16 {
-        self.registers.read(match register {
-            0 => 0,
-            1 => 1,
-            2 => 2,
-            3 => 3,
-            4 => 3,
-            5 => 5,
-            6 => 6,
-            7 => 7,
-            _ => {
-                panic!("Invalid read_register R{register}.")
-            }
-        })
+        if register > 7 {
+            panic!("Invalid read_register R{register}.")
+        }
+        self.registers.read(register)
     }
 }

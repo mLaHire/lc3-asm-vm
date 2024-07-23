@@ -339,12 +339,21 @@ impl Token {
                                 if current_token_text.starts_with("-") {
                                     interpretation.sign = Sign::MINUS;
                                 }
-                                current_token_text =
+                                let text_to_parse =
                                     current_token_text.trim_start_matches('-').to_string();
                                 //println!("'{}'", current_token_text);
                                 // break;
-                                let value: u32 =
-                                    u32::from_str_radix(&current_token_text, 16).unwrap();
+                                let value: u32 = match u32::from_str_radix(
+                                    &text_to_parse.trim(),
+                                    16,
+                                ) {
+                                    Ok(val) => val,
+                                    Err(e) => {
+                                        return Err(format!(
+                                                "Invalid hexadecimal literal 'x{current_token_text}': {e}"
+                                            ));
+                                    }
+                                };
                                 if value > 0xFFFF {
                                     return Err(format!(
                                         "Hexadecimal literal {:0x} is out of range.",
@@ -575,6 +584,14 @@ impl Assembler {
         self.trim_lines();
         for (token_stream, number) in &self.tokenized_lines {
             if let Token::Label(symbol) = token_stream.first().unwrap() {
+                if self
+                    .symbol_table
+                    .iter()
+                    .find(|&sym| sym.name == *symbol)
+                    .is_some()
+                {
+                    panic!("[ASM]\tError: label '{}' is already defined.", symbol);
+                }
                 self.symbol_table.push(Symbol {
                     name: symbol.clone(),
                     offset_from_origin: *number,
@@ -676,6 +693,7 @@ impl Assembler {
                                     }
                                     _ => {}
                                 }
+                                println!("Found origin: {}", { val.value });
 
                                 self.orig = val.value;
                                 found_orig = true;
@@ -684,9 +702,16 @@ impl Assembler {
                         }
                     }
 
-                    other => {} /*return Err(if !expecting_origin_value_next {format!("Expected .orig directive. Found {:?} ", other)} else {format!("Expecting number literal.")})*/,
+                    other => {
+                        if expecting_origin_value_next {
+                            return Err(format!(
+                                "Found .ORIG directive, but no value is assigned as origin."
+                            ));
+                        }
+                    } /*return Err(if !expecting_origin_value_next {format!("Expected .orig directive. Found {:?} ", other)} else {format!("Expecting number literal.")})*/,
                 }
             }
+            expecting_origin_value_next = false;
         }
 
         if !found_orig {
@@ -895,14 +920,16 @@ impl Assembler {
                                         );
                                     }
 
-                                    
-
                                     for (i, ch) in text.bytes().enumerate() {
                                         memory_writes.push((
                                             self.orig + line_offset + (i as u16),
                                             ch as u16,
                                         ));
-                                        println!("\t'{}' --> 0x{:04x}", std::str::from_utf8(&[ch]).unwrap(), self.orig + line_offset + (i as u16) );
+                                        println!(
+                                            "\t'{}' --> 0x{:04x}",
+                                            std::str::from_utf8(&[ch]).unwrap(),
+                                            self.orig + line_offset + (i as u16)
+                                        );
                                     }
 
                                     //Null term
@@ -910,8 +937,11 @@ impl Assembler {
                                         self.orig + line_offset + (text.bytes().len() as u16),
                                         0,
                                     ));
-                                    println!("\t'\\0' --> 0x{:04x}\n", self.orig + line_offset + (text.bytes().len() as u16));
-                                    reserved_word_count += text.bytes().len()  as u16;
+                                    println!(
+                                        "\t'\\0' --> 0x{:04x}\n",
+                                        self.orig + line_offset + (text.bytes().len() as u16)
+                                    );
+                                    reserved_word_count += text.bytes().len() as u16;
                                     for sym in &mut self.symbol_table {
                                         if sym.offset_from_origin == unadjusted_offset {
                                             sym.size_in_words = 1 + text.bytes().len() as u16;
@@ -946,7 +976,7 @@ impl Assembler {
                     }
                 }
 
-                _ => (skip_count += 1),
+                _ => skip_count += 1,
             };
         }
         //memory_writes =  memory_writes.into_iter().map(|w|(w.0-1,w.1)).collect();
@@ -1037,7 +1067,8 @@ impl Assembler {
             match line.first().unwrap() {
                 Token::Instruction(instr) => {
                     //println!("{:03} Searching for instruction '{instr}'.", line_offset);
-                    target_instruction = &self.instruction_set[instr]; //.expect("Undefined instruction {instr}");
+                    target_instruction = &self.instruction_set[&instr.to_ascii_uppercase()];
+                    //.expect("Undefined instruction {instr}");
                 }
                 // /Token::Directive(dir) => {
                 //     println!("Ignoring directive .{dir} (line {line_offset})");
@@ -1166,7 +1197,7 @@ impl Assembler {
                             let mut symbol_value: Option<u16> = None;
 
                             for sym in &self.symbol_table {
-                                if sym.name == *lbl {
+                                if sym.name.to_ascii_uppercase() == *lbl.to_ascii_uppercase() {
                                     symbol_value = Some(sym.offset_from_origin);
                                 }
                             }
@@ -1185,7 +1216,7 @@ impl Assembler {
                                 ))
                             );
 
-                            let mut pc_offset_9 = binary_utils::truncate_to_n_bit(binary_utils::add_2s_complement(
+                            let pc_offset_9 = binary_utils::truncate_to_n_bit(binary_utils::add_2s_complement(
                                     symbol_value,
                                     binary_utils::invert_sign(line_offset+1),),10) /*<< 7
                                     >> 7*/
@@ -1219,10 +1250,10 @@ pub type SymbolTable = Vec<Symbol>;
 
 fn is_instruction(s: &str) -> bool {
     vec![
-        "AND", "ADD", "NOT", "BR", "BRz", "BRp", "BRn", "BRnz", "BRnzp", "BRnp", "BRzp", "LD",
+        "AND", "ADD", "NOT", "BR", "BRZ", "BRP", "BRN", "BRNZ", "BRNZP", "BRNP", "BRZP", "LD",
         "LDI", "LDR", "ST", "STR", "STI", "TRAP", "JMP", "RET", "JSR", "JSRR", "LEA", "HALT",
     ]
-    .contains(&s)
+    .contains(&s.to_ascii_uppercase().as_str())
 }
 
 use std::collections::HashMap;
@@ -1285,22 +1316,22 @@ impl Parser {
         );
 
         instr_set.insert(
-            String::from("BRn"),
+            String::from("BRN"),
             InstrDef::new(OP::BR, flag_set_mask(11), vec![Param::Label]),
         );
 
         instr_set.insert(
-            String::from("BRz"),
+            String::from("BRZ"),
             InstrDef::new(OP::BR, flag_set_mask(10), vec![Param::Label]),
         );
 
         instr_set.insert(
-            String::from("BRp"),
+            String::from("BRP"),
             InstrDef::new(OP::BR, flag_set_mask(9), vec![Param::Label]),
         );
 
         instr_set.insert(
-            String::from("BRnz"),
+            String::from("BRNZ"),
             InstrDef::new(
                 OP::BR,
                 flag_set_mask(11) + flag_set_mask(10),
@@ -1309,7 +1340,7 @@ impl Parser {
         );
 
         instr_set.insert(
-            String::from("BRnp"),
+            String::from("BRNP"),
             InstrDef::new(
                 OP::BR,
                 flag_set_mask(11) + flag_set_mask(9),
@@ -1318,7 +1349,7 @@ impl Parser {
         );
 
         instr_set.insert(
-            String::from("BRzp"),
+            String::from("BRZP"),
             InstrDef::new(
                 OP::BR,
                 flag_set_mask(10) + flag_set_mask(9),
@@ -1327,7 +1358,7 @@ impl Parser {
         );
 
         instr_set.insert(
-            String::from("BRnzp"),
+            String::from("BRNZP"),
             InstrDef::new(
                 OP::BR,
                 flag_set_mask(10) + flag_set_mask(9) + flag_set_mask(11),
@@ -1335,16 +1366,15 @@ impl Parser {
             ),
         );
 
+        let nzp = flag_set_mask(10) + flag_set_mask(9) + flag_set_mask(11);
         instr_set.insert(
             String::from("JMP"),
             InstrDef::new(OP::JMP, 0, vec![Param::Label]),
         );
 
-        let nzp = flag_set_mask(10) + flag_set_mask(9) + flag_set_mask(11);
-
         instr_set.insert(
             String::from("RET"),
-            InstrDef::new(OP::BR, 0b0000_000_111_000000, vec![]),
+            InstrDef::new(OP::BR, 0b0000_000_111_000000 + nzp, vec![]),
         );
         instr_set.insert(
             String::from("JSR"),

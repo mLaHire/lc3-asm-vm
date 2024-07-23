@@ -11,7 +11,7 @@ fn main() {
     let getc_x23 = assemble::TrapInstruction::new("getc", 0x23);
 
     print!("Enter local file path: .\\src\\asm-files\\");
-    let mut buffer = match Term::stdout().read_line() {
+    let buffer = match Term::stdout().read_line() {
         Ok(p) => p,
         Err(e) => panic!("{e}"),
     }
@@ -22,18 +22,23 @@ fn main() {
     path.push_str(&buffer);
     print!("Debug_enabled? (y/n)");
 
-    let mut debug_enabled = match Term::stdout().read_line() {
+    let debug_enabled = match Term::stdout().read_line() {
         Ok(p) => p,
         Err(e) => panic!("{e}"),
-    }.trim()
-    .to_owned().contains("y");
+    }
+    .trim()
+    .to_owned()
+    .contains("y");
 
     let mut asm = assemble::Assembler::new(&path);
     asm.load();
     asm.tokenize();
     match asm.parse_origin_and_end() {
-        Err(e) => eprintln!("Error finding program .ORIG and .END: {e}"),
-        Ok(r) => println!("Program\t.ORIG {:x}\t.END{:x}", r.0, r.1),
+        Err(e) => {
+            eprintln!("[ASM]\tError finding program .ORIG and .END: {e}");
+            return;
+        }
+        Ok(r) => println!("[ASM] Program\t.ORIG {:x}\t.END{:x}", r.0, r.1),
     }
     asm.load_symbols();
 
