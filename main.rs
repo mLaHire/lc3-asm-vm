@@ -1,4 +1,5 @@
 use console::Term;
+use std::time::Instant;
 pub mod assemble;
 pub mod binary_utils;
 pub mod error;
@@ -45,7 +46,10 @@ fn main() {
     asm.parse_directives();
     asm.adjust_symbols();
     asm.vm.debug_enabled = debug_enabled;
+    let now = Instant::now();
     asm.parse_instructions_then_run(Some(vec![putc_x21, puts_x22, getc_x23]));
+    let elapsed = now.elapsed();
+    println!("\nExecuted {} instructions in {:?}", asm.vm.instruction_count, elapsed);
 
     return;
 }

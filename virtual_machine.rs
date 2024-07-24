@@ -15,7 +15,7 @@ use crate::binary_utils::{
 pub const PC_START: u16 = 0x00;
 pub const PC_START_IDX: usize = 0x300;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ConditionCode {
     POSITIVE = 1 << 0,
     NEGATIVE = 1 << 1,
@@ -115,15 +115,17 @@ pub struct VirtualMachine {
     pub dsr_address: u16,
     pub ddr_address: u16,
 
-    pub keyboard_reg_mutex: Arc<Mutex<IORegister>>,
-    pub display_reg_mutex: Arc<Mutex<IORegister>>,
+    keyboard_reg_mutex: Arc<Mutex<IORegister>>,
+    display_reg_mutex: Arc<Mutex<IORegister>>,
 
     pub run: bool,
     pub debug_enabled: bool,
 
     program_counter: u16,
     origin: u16,
-    instruction: Instruction,
+
+    current_instruction: Instruction,
+    pub instruction_count: i32,
 }
 
 #[derive(Debug)]
@@ -137,7 +139,7 @@ impl VirtualMachine {
         VirtualMachine {
             memory: [0; binary_utils::MAX_MEMORY_SIZE],
 
-            instruction: Instruction {
+            current_instruction: Instruction {
                 opcode: OP::RES,
                 word: 0,
             },
@@ -161,6 +163,8 @@ impl VirtualMachine {
 
             program_counter: PC_START,
             origin: 0,
+
+            instruction_count: 0,
         }
     }
 
@@ -205,7 +209,7 @@ impl VirtualMachine {
                 {
                     //print!("[IO] [DISP] Output detected {}", display.data);
                     //There is a char to read from DDR which has not been displayed yet.
-                    //(*display).signal = 1;
+                    //(*display).signal[15 = 1;
                     if display.data > 127 {
                         let ch: String = String::from_utf16_lossy(&[display.data]);
                         drop(display);
@@ -223,7 +227,7 @@ impl VirtualMachine {
                     }
                 }
                 drop(display);
-                thread::sleep(time::Duration::from_millis(10));
+                thread::sleep(time::Duration::from_millis(1));
             }
         });
 
@@ -247,11 +251,12 @@ impl VirtualMachine {
                     let lock_attempt = kb_registers.try_lock();
                     match lock_attempt {
                         Err(e) => {
-                            if attempt_count > 10 {
-                                println!("[IO] Waiting for keyboard_register_mutex. {e}");
-                            }
-                            attempt_count += 1;
-                            thread::sleep(time::Duration::from_millis(5 + attempt_count));
+                            // if attempt_count > 10 {
+                            //     println!("[IO] Waiting for keyboard_register_mutex. {e}");
+                                
+                            // }
+                            // attempt_count += 1;
+                            // thread::sleep(time::Duration::from_millis(5 + attempt_count));
                             continue;
                         }
 
@@ -270,7 +275,7 @@ impl VirtualMachine {
                 }
                 drop(kb_regs);
                 //println!("[IO] Dropped kb_regs.");
-                thread::sleep(time::Duration::from_millis(10));
+                thread::sleep(time::Duration::from_millis(2));
             }
         });
     }
@@ -315,6 +320,7 @@ impl VirtualMachine {
                     Err(e) => {
                         if attempt_count > 10 {
                             println!("[CPU] Waiting for keyboard_register_mutex. {e}");
+                            
                         }
                         attempt_count += 1;
                         thread::sleep(time::Duration::from_millis(5 + attempt_count));
@@ -347,7 +353,7 @@ impl VirtualMachine {
             self.memory[address as usize] = kb_reg.data;
             kb_reg.signal = 0;
             drop(kb_reg);
-            thread::sleep(time::Duration::from_millis(10));
+            //thread::sleep(time::Duration::from_millis(10));
         }
 
         if address == self.dsr_address {
@@ -355,18 +361,18 @@ impl VirtualMachine {
             .display_reg_mutex
             .try_lock()
             .expect("[CPU] Failed to lock disp_reg (signal)");*/
-            let mut attempt_count = 0;
+            //let mut attempt_count = 0;
             let disp_reg = loop {
                 let lock_attempt = self.display_reg_mutex.try_lock();
 
                 match lock_attempt {
                     Err(e) => {
-                        attempt_count += 1;
-                        if attempt_count > 10 {
-                            println!("[CPU] [READ] Waiting for display_reg_mutex. {e}");
-                        }
+                        // attempt_count += 1;
+                        // if attempt_count > 10 {
+                        //     //println!("[CPU] [READ] Waiting for display_reg_mutex. {e}");
+                        // }
 
-                        thread::sleep(time::Duration::from_millis(5 + attempt_count));
+                        //thread::sleep(time::Duration::from_millis(1 + attempt_count));
                         continue;
                     }
 
@@ -420,14 +426,19 @@ impl VirtualMachine {
         }
 
         if address == self.ddr_address {
+            let mut attempt_count = 0;
             let mut disp_reg = loop {
                 let lock_attempt = self.display_reg_mutex.try_lock();
                 match lock_attempt {
                     Err(e) => {
-                        println!("[CPU] [WRITE] Waiting for display_reg_mutex. {e}");
-                        thread::sleep(time::Duration::from_millis(10));
+                        if attempt_count > 10{
+                            //thread::sleep(time::Duration::from_millis(attempt_count-5));
+                            //println!("[CPU] [WRITE] Waiting for display_reg_mutex. {e}");
+                        }
+                        attempt_count +=1;
+                        
                         continue;
-                    }
+                    },
 
                     Ok(lock) => {
                         break lock;
@@ -462,9 +473,9 @@ impl VirtualMachine {
             //return;
         }
 
-        self.instruction.word = self.memory[self.program_counter as usize];
+        self.current_instruction.word = self.memory[self.program_counter as usize];
         let opcode = VirtualMachine::u16_to_opcode(binary_utils::instructions::get_opcode_4bit(
-            self.instruction.word,
+            self.current_instruction.word,
         ));
 
         if self.debug_enabled {
@@ -473,23 +484,23 @@ impl VirtualMachine {
                 "[0x{:04x}\t0+0x{:03x}]\t\t{opcode:?}\t{:016b}",
                 self.program_counter as usize,
                 (self.program_counter as i32 - self.origin as i32),
-                /*self.program_counter,*/ self.instruction.word
+                /*self.program_counter,*/ self.current_instruction.word
             );
         }
         self.program_counter += 1;
     }
 
     pub fn decode(&mut self) {
-        self.instruction.opcode = VirtualMachine::u16_to_opcode(
-            binary_utils::instructions::get_opcode_4bit(self.instruction.word),
+        self.current_instruction.opcode = VirtualMachine::u16_to_opcode(
+            binary_utils::instructions::get_opcode_4bit(self.current_instruction.word),
         );
     }
 
     pub fn execute(&mut self) {
         //println!("{:?}", self.instruction.opcode);
-        let instr = self.instruction.word;
+        let instr = self.current_instruction.word;
 
-        match self.instruction.opcode {
+        match self.current_instruction.opcode {
             OP::ADD => self.execute_op_add(instr),
             OP::AND => self.execute_op_and(instr),
             OP::BR => self.execute_op_br(instr),
@@ -506,6 +517,7 @@ impl VirtualMachine {
             OP::RES => self.run = false,
             _ => panic!("No valid instruction."),
         }
+        self.instruction_count += 1;
     }
 
     pub fn ld_instr_to_mem(&mut self, instr: u16, addr: usize) {
@@ -624,7 +636,7 @@ impl VirtualMachine {
         } else {
             if self.debug_enabled {
                 println!(
-                    "[CPU]\t\tNot branching, continuing to 0x{:04x}",
+                    "\n[CPU]\t\tNot branching, continuing to 0x{:04x}",
                     self.program_counter + 1
                 );
             }
@@ -753,7 +765,7 @@ impl VirtualMachine {
 
         let address_of_subroutine = self.read_memory(trap_vector);
         if self.debug_enabled {
-            println!("[CPU]\t[TRAP]\tEXECUTING TRAP (0x{trap_vector:x}) Called at 0x{:x} ---> 0x{address_of_subroutine:x}", self.program_counter - 1);
+            println!("\n[CPU]\t[TRAP]\tEXECUTING TRAP (0x{trap_vector:x}) Called at 0x{:x} ---> 0x{address_of_subroutine:x}\n", self.program_counter - 1);
         }
         self.set_reg(7, self.program_counter);
         self.program_counter = address_of_subroutine;
@@ -768,6 +780,7 @@ impl VirtualMachine {
     }
 
     pub fn update_condition(&mut self, result: u16) {
+        let intial = self.registers.condition.clone();
         if result == 0 {
             self.registers.condition = ConditionCode::ZERO;
         } else if is_negative(result) {
@@ -776,7 +789,14 @@ impl VirtualMachine {
             self.registers.condition = ConditionCode::POSITIVE;
         }
         if self.debug_enabled {
-            println!("[CPU]\t{:?}", self.registers.condition);
+            
+            println!("[CPU][CC]\t\t\t[{}]\t{}", match self.registers.condition{
+                ConditionCode::NEGATIVE => "-",
+                ConditionCode::ZERO => "0",
+                ConditionCode::POSITIVE => "+",
+            }, if intial != self.registers.condition{"[CHANGE]\n"}else{""});
+
+            
         }
     }
 

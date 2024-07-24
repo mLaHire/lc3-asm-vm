@@ -26,6 +26,7 @@ L4      LDI R3,DSR
         LD          R1,SaveR1 ; Service routine done, restore
         LD          R2,SaveR2 ; original values in registers.
         LD          R3,SaveR3
+        HALT
         RET
 SaveR1  .BLKW #1
 SaveR2  .BLKW #1

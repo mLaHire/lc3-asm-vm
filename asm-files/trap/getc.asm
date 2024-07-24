@@ -35,5 +35,5 @@ Loop    LDR         R0,R1,#0 ; Get next prompt character
         KBSR        .FILL xFE00
         KBDR        .FILL xFE02
         Newline     .FILL xA ; ASCII code for newline
-        Prompt      .STRINGZ "Input a character"
+        Prompt      .STRINGZ "Input a character>"
         .END

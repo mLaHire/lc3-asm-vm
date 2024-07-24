@@ -1,13 +1,7 @@
             .ORIG x3000
-            LEA R1, A
-            LDR R0, R1, #0
-PRINT       TRAP x21
-            ADD R1, R1, #1
-            LDR R0, R1, #0
-            BRz EXIT
-            BRnZp PRINT
-EXIT        LEA R1, N
-            LDR R0, R1, #0
+            LEA R0, A
+            TRAP x22
+EXIT        LD R0, N
             TRAP x21
             LD R0, LETTER
             TRAP x21
