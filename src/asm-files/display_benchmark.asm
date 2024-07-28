@@ -7,7 +7,7 @@ REPEAT      LEA         R0, TEXT
             ADD         R1, R1, #-1
             BRp         REPEAT
             HALT
-            .END
 TIMES       .FILL	    #10
 ENDL        .FILL	    #10
 TEXT        .STRINGZ    "This is a long message. How long does it take?"
+            .END

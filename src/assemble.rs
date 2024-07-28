@@ -523,16 +523,16 @@ pub struct TokenizedLine {
     pub tokens: Vec<Token>,
 }
 
-struct MemoryWrite {
-    rel_addr: u16,
-    value: u16,
+pub struct MemoryWrite {
+    pub rel_addr: u16,
+    pub value: u16,
 }
 
 pub struct ExecutableImage {
-    name: String,
-    origin: u16,
-    instructions: Vec<MemoryWrite>,
-    data: Vec<MemoryWrite>,
+    pub name: String,
+    pub origin: u16,
+    pub instructions: Vec<MemoryWrite>,
+    pub data: Vec<MemoryWrite>,
 }
 
 impl ExecutableImage {
@@ -1203,7 +1203,7 @@ impl Assembler {
 
     pub fn link_then_execute(
         &mut self,
-        img: ExecutableImage,
+        img: &ExecutableImage,
         trap_instructions: Option<Vec<TrapInstruction>>,
     ) {
         // let mut instructions: Vec<u16> = match self.parse_instructions() {
@@ -1250,11 +1250,11 @@ impl Assembler {
         });
 
         //vm.load_binary_into_memory(instructions, self.orig);
-        for w in img.instructions {
+        for w in &img.instructions {
             vm.write_memory(w.rel_addr + img.origin, w.value);
         }
 
-        for w in img.data {
+        for w in &img.data {
             //println!("Writing DATA: 0x{:x} <= {:x}", w.rel_addr + img.origin, w.value);
             vm.write_memory(w.rel_addr + img.origin, w.value);
         }
@@ -1267,7 +1267,10 @@ impl Assembler {
             vm.execute();
 
             if !vm.run {
-                thread::sleep(time::Duration::from_millis(50));
+                thread::sleep(time::Duration::from_millis(100));
+                print!("Ending VM instance...");
+                print!("Done.\n");
+
                 break;
             }
             //Term::stdout().read_char();
