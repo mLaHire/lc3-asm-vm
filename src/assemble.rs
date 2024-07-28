@@ -1,6 +1,8 @@
 use crate::binary_utils;
 use crate::binary_utils::flag_set_mask;
 use crate::error;
+use crate::error::AsmblrErr;
+use crate::error::FileLoadError;
 use crate::virtual_machine;
 use core::panic;
 use io::BufRead;
@@ -13,7 +15,8 @@ use std::time;
 #[derive(Debug)]
 pub struct Symbol {
     name: String,
-    offset_from_origin: u16,
+    rel_addr: u16,
+    src_ln_number: u16,
     size_in_words: u16,
 }
 
@@ -287,10 +290,10 @@ impl Token {
                                     }
                                 };
 
-                                if value > 0xFFFF {
+                                if value > 2u32.pow(15) {
                                     return Err(format!(
-                                        "Decimal literal {} is out of range.",
-                                        value
+                                        "Decimal literal {} is out of range. MAX = +/-{}",
+                                        value, 2u32.pow(15)
                                     ));
                                 }
 
@@ -356,8 +359,8 @@ impl Token {
                                 };
                                 if value > 0xFFFF {
                                     return Err(format!(
-                                        "Hexadecimal literal {:0x} is out of range.",
-                                        value
+                                        "Hexadecimal literal {:0x} is out of range, MAX +/-{}",
+                                        value, 2u32.pow(15)
                                     ));
                                 }
 
@@ -469,14 +472,41 @@ impl TrapInstruction {
         asm.load();
         asm.tokenize();
         match asm.parse_origin_and_end() {
-            Err(e) => panic!("Error finding program .ORIG and .END: {e}"),
+            Err(errors) => {
+                AsmblrErr::display(
+                    &format!(".\\src\\asm-files\\trap\\{}.asm", filename),
+                    &asm.raw_lines,
+                    &errors,
+                );
+                panic!();
+            }
             Ok(r) => println!("TRAP Program\t.ORIG {:x}\t.END{:x}", r.0, r.1),
         };
         asm.load_symbols();
         asm.adjust_symbols();
         //asm.trim_lines();
-        let memory_writes = asm.parse_directives_to_list();
-        let instructions = asm.parse_instructions();
+        let memory_writes = match asm.parse_directives_to_list() {
+            Ok(writes) => writes,
+            Err(errors) => {
+                AsmblrErr::display(
+                    &format!(".\\src\\asm-files\\trap\\{}.asm", filename),
+                    &asm.raw_lines,
+                    &errors,
+                );
+                panic!();
+            }
+        };
+        let instructions = match asm.parse_instructions() {
+            Ok(writes) => writes,
+            Err(errors) => {
+                AsmblrErr::display(
+                    &format!(".\\src\\asm-files\\trap\\{}.asm", filename),
+                    &asm.raw_lines,
+                    &errors,
+                );
+                panic!();
+            }
+        };
         TrapInstruction {
             memory_writes,
             instructions,
@@ -486,19 +516,48 @@ impl TrapInstruction {
     }
 }
 
+#[derive(Clone)]
+pub struct TokenizedLine {
+    pub rel_addr: u16,
+    pub src_ln_number: u16,
+    pub tokens: Vec<Token>,
+}
+
+struct MemoryWrite {
+    rel_addr: u16,
+    value: u16,
+}
+
+pub struct ExecutableImage {
+    name: String,
+    origin: u16,
+    instructions: Vec<MemoryWrite>,
+    data: Vec<MemoryWrite>,
+}
+
+impl ExecutableImage {
+    pub fn new(name: String) -> Self {
+        ExecutableImage {
+            name: name.clone(),
+            origin: 0,
+            instructions: Vec::new(),
+            data: Vec::new(),
+        }
+    }
+}
+
 pub struct Assembler {
     file_path: String,
-    raw_lines: Vec<String>,
+    pub raw_lines: Vec<String>,
     processed_lines: Vec<SourceLine>,
-    tokenized_lines: Vec<(Vec<Token>, u16)>,
+    //tokenized_lines: Vec<(Vec<Token>, u16)>,
+    tokenized_lines: Vec<TokenizedLine>,
     symbol_table: SymbolTable,
     instruction_set: HashMap<String, InstrDef>,
     pub vm: virtual_machine::VirtualMachine,
     pub orig: u16,
     end: u16,
 }
-
-impl Assembler {}
 
 impl Assembler {
     pub fn new(path: &str) -> Self {
@@ -522,7 +581,7 @@ impl Assembler {
             Ok(f) => f,
             Err(e) => {
                 dbg!(e);
-                panic!("{:?}", error::FileLoadError::FsOpenFailed);
+                panic!("{:?}", FileLoadError::FsOpenFailed);
             }
         };
 
@@ -540,6 +599,65 @@ impl Assembler {
         }
         //self.symbol_table = Self::build_symbol_table(&self.processed_lines);
         //println!("Symbol table: {:#?}", self.symbol_table);
+    }
+
+    pub fn assemble(&mut self) -> Result<ExecutableImage, Vec<AsmblrErr>> {
+        let mut errors = Vec::new();
+        let mut img = ExecutableImage::new(self.file_path.clone());
+
+        match self.tokenize() {
+            Ok(_) => (),
+            Err(e) => errors = [errors, e].concat(),
+        };
+        match self.parse_origin_and_end() {
+            Err(e) => {
+                errors = [errors, e].concat();
+            }
+            Ok(r) => {
+                println!("[ASM] Program\t.ORIG {:x}\t.END{:x}", r.0, r.1);
+                img.origin = r.0;
+            }
+        }
+        match self.load_symbols() {
+            Ok(_) => (),
+            Err(e) => {
+                errors = [errors, e].concat();
+            }
+        }
+
+        match self.parse_directives_to_list() {
+            Ok(list) => {
+                for (addr, value) in list {
+                    img.data.push(MemoryWrite {
+                        rel_addr: addr-self.orig,
+                        value,
+                    })
+                }
+            }
+            Err(e) => {
+                errors = [errors, e].concat();
+            }
+        }
+        self.adjust_symbols();
+
+        match self.parse_instructions() {
+            Ok(instructions) => {
+                for (index, word) in instructions.into_iter().enumerate() {
+                    img.instructions.push(MemoryWrite {
+                        rel_addr: index as u16,
+                        value: word,
+                    })
+                }
+            },
+            Err(e) => {
+                errors = [errors, e].concat();
+            }
+        }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
+        Ok(img)
     }
 
     pub fn omit_comments(&self) -> Vec<SourceLine> {
@@ -580,57 +698,111 @@ impl Assembler {
         result
     }
 
-    pub fn load_symbols(&mut self) {
-        self.trim_lines();
-        for (token_stream, number) in &self.tokenized_lines {
+    pub fn load_symbols(&mut self) -> Result<(), Vec<AsmblrErr>> {
+        let mut errors = Vec::new();
+        self.omit_empty_lines();
+        for tk_ln in &self.tokenized_lines {
+            let token_stream = &tk_ln.tokens;
+            let relative_address = tk_ln.rel_addr;
             if let Token::Label(symbol) = token_stream.first().unwrap() {
                 if self
                     .symbol_table
                     .iter()
-                    .find(|&sym| sym.name == *symbol)
+                    .find(|&sym| sym.name.eq_ignore_ascii_case(symbol))
                     .is_some()
                 {
-                    panic!("[ASM]\tError: label '{}' is already defined.", symbol);
+                    errors.push(AsmblrErr::new(
+                        tk_ln.src_ln_number,
+                        format!("Label '{}' is already defined.", symbol),
+                    ));
+                    let initial_def = self
+                        .symbol_table
+                        .iter()
+                        .find(|&sym| sym.name.eq_ignore_ascii_case(symbol))
+                        .unwrap();
+                    errors.push(AsmblrErr::new(
+                        initial_def.src_ln_number,
+                        format!("Label {} is defined again later.", symbol),
+                    ))
                 }
                 self.symbol_table.push(Symbol {
                     name: symbol.clone(),
-                    offset_from_origin: *number,
+                    rel_addr: relative_address,
+                    src_ln_number: tk_ln.src_ln_number,
                     size_in_words: 1,
                 });
             }
         }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
         println!("Symbol table: {:#?}", self.symbol_table);
+        Ok(())
     }
 
-    pub fn tokenize(&mut self) {
+    pub fn tokenize(&mut self) -> Result<Vec<TokenizedLine>, Vec<AsmblrErr>> {
+        let mut tokenized_lines = Vec::new();
+        let mut errors = Vec::new();
         for ln in &self.processed_lines {
             let token_stream = match Token::tokenize_line(ln) {
                 Ok(tk) => tk,
                 Err(e) => {
-                    eprintln!(
+                    errors.push(AsmblrErr::new(
+                        ln.actual_line,
+                        e,
+                        /*  format!(
                         "\nSyntax error ('{}' (line {})):\n\n{:02}\t\t'{}'\n\n\t\t{}",
-                        self.file_path, ln.actual_line, ln.actual_line, ln.text, e
-                    );
-                    panic!();
+                        self.file_path, ln.actual_line, ln.actual_line, ln.text, e*/
+                    ));
+                    continue;
                 }
             };
 
             println!("{:02}     {:?}", ln.actual_line, token_stream);
-            self.tokenized_lines.push((token_stream, ln.number));
+            tokenized_lines.push(TokenizedLine {
+                rel_addr: ln.number,
+                src_ln_number: ln.actual_line,
+                tokens: token_stream,
+            });
         }
+
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
+        self.tokenized_lines = tokenized_lines.clone();
+        Ok(tokenized_lines)
     }
 
-    pub fn trim_lines(&mut self) {
+    pub fn omit_empty_lines(&mut self) {
+        //!(tk.0.is_empty() || (tk.0.starts_with(&[Token::Directive(String::new())]))
         let filtered = self
             .tokenized_lines
             .clone()
             .into_iter()
-            .filter(|tk| !(tk.0.is_empty() || tk.0.starts_with(&[Token::Directive(String::new())])))
+            .filter(|tk_ln| {
+                if tk_ln.tokens.is_empty() {
+                    false
+                } else if let Token::Directive(dir) = tk_ln.tokens.first().unwrap() {
+                    let mut dir = dir.clone();
+                    dir.make_ascii_uppercase();
+                    match dir.as_str() {
+                        "ORIG" | "END" => false,
+                        _ => true,
+                    }
+                } else {
+                    true
+                }
+            })
             .enumerate();
 
         self.tokenized_lines.clear();
         for (index, line) in filtered {
-            self.tokenized_lines.push((line.0, index as u16));
+            self.tokenized_lines.push(TokenizedLine {
+                rel_addr: index as u16,
+                src_ln_number: line.src_ln_number,
+                tokens: line.tokens,
+            });
         }
     }
 
@@ -638,26 +810,31 @@ impl Assembler {
     //     let instruction_set = Parser::define_instruction_set();
     // }
 
-    pub fn parse_origin_and_end(&mut self) -> Result<(u16, u16), String> {
+    pub fn parse_origin_and_end(&mut self) -> Result<(u16, u16), Vec<AsmblrErr>> {
         let mut found_orig = false;
         let mut expecting_origin_value_next = false;
 
         let mut found_end = false;
 
+        let mut errors = Vec::new();
+
         //let expected_origin_tk = &self.tokenized_lines.first().expect("Expected origin.").0.first().expect("Expected token");
 
         for ln in &self.tokenized_lines {
-            let token_stream = &ln.0;
+            let token_stream = &ln.tokens;
 
-            println!("{:03}\t{:?}", ln.1, ln.0);
+            println!("{:03}\t{:?}", ln.src_ln_number, token_stream);
 
             for token in token_stream {
                 match token {
                     Token::Directive(dir) => {
                         if dir != "ORIG" {
                             if !found_orig {
-                                return Err(String::from(
+                                errors.push(AsmblrErr::new(
+                                    ln.src_ln_number,
+                                    format!(
                                     "Expected .ORIG directive. Found directive '.{dir}' instead.",
+                                ),
                                 ));
                             }
                             /*else if dir != "END" && !found_end{
@@ -665,15 +842,21 @@ impl Assembler {
                             }*/
                             else if dir == "END" {
                                 if found_end {
-                                    return Err(format!(".END already defined ({:x}).", self.end));
+                                    errors.push(AsmblrErr::new(
+                                        ln.src_ln_number,
+                                        format!(".END already defined ({:x}).", self.end),
+                                    ));
                                 }
 
-                                self.end = ln.1 + self.orig;
+                                self.end = ln.rel_addr + self.orig;
                                 found_end = true;
                             }
                         } else {
                             if found_orig {
-                                return Err(format!(".ORIG aleady defined ({}).", self.orig));
+                                errors.push(AsmblrErr::new(
+                                    ln.src_ln_number,
+                                    format!(".ORIG aleady defined ({}).", self.orig),
+                                ));
                             } else {
                                 expecting_origin_value_next = true;
                             }
@@ -682,14 +865,18 @@ impl Assembler {
 
                     Token::DecimalLiteral(val) | Token::HexLiteral(val) => {
                         if !expecting_origin_value_next && !found_orig {
-                            return Err(format!("Not expecting decimal literal."));
+                            errors.push(AsmblrErr::new(
+                                ln.src_ln_number,
+                                format!("Not expecting decimal literal."),
+                            ));
                         } else {
                             if !found_orig {
                                 match val.sign {
                                     Sign::MINUS => {
-                                        return Err(format!(
-                                            ".ORIG must be set to a positive value."
-                                        ))
+                                        errors.push(AsmblrErr::new(
+                                            ln.src_ln_number,
+                                            format!(".ORIG must be set to a positive value."),
+                                        ));
                                     }
                                     _ => {}
                                 }
@@ -704,8 +891,11 @@ impl Assembler {
 
                     other => {
                         if expecting_origin_value_next {
-                            return Err(format!(
-                                "Found .ORIG directive, but no value is assigned as origin."
+                            errors.push(AsmblrErr::new(
+                                ln.src_ln_number,
+                                format!(
+                                    "Found .ORIG directive, but no value is assigned as origin."
+                                ),
                             ));
                         }
                     } /*return Err(if !expecting_origin_value_next {format!("Expected .orig directive. Found {:?} ", other)} else {format!("Expecting number literal.")})*/,
@@ -715,143 +905,153 @@ impl Assembler {
         }
 
         if !found_orig {
-            return Err(format!("Unable to find .ORIG"));
+            errors.push(AsmblrErr::new(1, format!("Unable to find program .ORIG")));
         }
 
         if !found_end {
-            return Err(format!("Unable to find .END"));
+            errors.push(AsmblrErr::new(1, format!("Unable to find program.END")));
+        }
+
+        if !errors.is_empty() {
+            return Err(errors);
         }
 
         Ok((self.orig, self.end))
     }
 
     pub fn parse_directives(&mut self) {
-        let parsed = self.parse_directives_to_list();
+        let parsed = match self.parse_directives_to_list() {
+            Ok(parsed) => parsed,
+            Err(errors) => {
+                AsmblrErr::display(&self.file_path, &self.raw_lines, &errors);
+                panic!("Unable to parse directives.");
+            }
+        };
         for (addr, val) in parsed.iter() {
             self.vm.write_memory(*addr, *val);
         }
     }
 
-    pub fn __parse_directives(&mut self) {
-        todo!("Obsolete");
-        println!("[ASM]\tParsing directives...");
-        let mut reserved_word_count = 0u16;
+    /*pub fn __parse_directives(&mut self) {
+            todo!("Obsolete");
+            println!("[ASM]\tParsing directives...");
+            let mut reserved_word_count = 0u16;
 
-        for (line_, line_offset) in &self.tokenized_lines {
-            let line = match line_.strip_prefix(&[Token::Label(format!(""))]) {
-                Some(without_label) => {
-                    print!("LABEL: {:?}\t", line_.first().unwrap());
-                    without_label
-                }
-                None => line_,
-            };
-            //println!("{line_offset} \t {line:?}");
-            let mut line = line.iter().take(2);
-            match match line.next() {
-                Some(val) => val,
-                None => continue,
-            } {
-                &Token::Directive(ref directive) => {
-                    //println!("Found directive {line:?} '{directive}'");
-                    if directive != "ORIG"
-                        && directive != "END"
-                        && *line_offset < (self.end - self.orig + 2)
-                    {
-                        // println!(
-                        //     "WARNING: Expected .END before directive .{directive} line offset = {}",
-                        //     *line_offset
-                        // );
+            for (line_, line_offset) in &self.tokenized_lines {
+                let line = match line_.strip_prefix(&[Token::Label(format!(""))]) {
+                    Some(without_label) => {
+                        print!("LABEL: {:?}\t", line_.first().unwrap());
+                        without_label
                     }
-
-                    let unadjusted_offset = *line_offset;
-
-                    let line_offset = line_offset + reserved_word_count;
-
-                    if directive == "FILL" {
-                        match line.next() {
-                            Some(token) => {
-                                //println!("{:?}", token);
-                                if token.is(&Token::HexLiteral(NumberLiteral::new()))
-                                    || token.is(&Token::DecimalLiteral(NumberLiteral::new()))
-                                {
-                                    self.vm
-                                        .write_memory(self.orig + line_offset, token.as_u16(None));
-                                } else {
-                                    panic!("NaN");
-                                }
-                            }
-                            None => println!("Empty."),
+                    None => line_,
+                };
+                //println!("{line_offset} \t {line:?}");
+                let mut line = line.iter().take(2);
+                match match line.next() {
+                    Some(val) => val,
+                    None => continue,
+                } {
+                    &Token::Directive(ref directive) => {
+                        //println!("Found directive {line:?} '{directive}'");
+                        if directive != "ORIG"
+                            && directive != "END"
+                            && *line_offset < (self.end - self.orig + 2)
+                        {
+                            // println!(
+                            //     "WARNING: Expected .END before directive .{directive} line offset = {}",
+                            //     *line_offset
+                            // );
                         }
-                    } else if directive == "STRINGZ" {
-                        match line.next() {
-                            Some(token) => {
-                                println!("{:?}", token);
-                                if let Token::StringLiteral(text) = token {
-                                    if !text.is_ascii() {
-                                        panic!(
-                                            "StringLiteral '{text}' contains non-ASCII characters."
-                                        );
-                                    }
 
-                                    for (i, ch) in text.bytes().enumerate() {
-                                        self.vm.write_memory(
-                                            self.orig + line_offset + (i as u16),
-                                            ch as u16,
-                                        );
-                                    }
+                        let unadjusted_offset = *line_offset;
 
-                                    //Null term
-                                    self.vm.write_memory(
-                                        self.orig + line_offset + (text.bytes().len() as u16),
-                                        0,
-                                    );
-                                    reserved_word_count += text.bytes().len() as u16;
-                                    for sym in &mut self.symbol_table {
-                                        if sym.offset_from_origin == unadjusted_offset {
-                                            sym.size_in_words = 1 + text.bytes().len() as u16;
+                        let line_offset = line_offset + reserved_word_count;
+
+                        if directive == "FILL" {
+                            match line.next() {
+                                Some(token) => {
+                                    //println!("{:?}", token);
+                                    if token.is(&Token::HexLiteral(NumberLiteral::new()))
+                                        || token.is(&Token::DecimalLiteral(NumberLiteral::new()))
+                                    {
+                                        self.vm
+                                            .write_memory(self.orig + line_offset, token.as_u16(None));
+                                    } else {
+                                        panic!("NaN");
+                                    }
+                                }
+                                None => println!("Empty."),
+                            }
+                        } else if directive == "STRINGZ" {
+                            match line.next() {
+                                Some(token) => {
+                                    println!("{:?}", token);
+                                    if let Token::StringLiteral(text) = token {
+                                        if !text.is_ascii() {
+                                            panic!(
+                                                "StringLiteral '{text}' contains non-ASCII characters."
+                                            );
                                         }
+
+                                        for (i, ch) in text.bytes().enumerate() {
+                                            self.vm.write_memory(
+                                                self.orig + line_offset + (i as u16),
+                                                ch as u16,
+                                            );
+                                        }
+
+                                        //Null term
+                                        self.vm.write_memory(
+                                            self.orig + line_offset + (text.bytes().len() as u16),
+                                            0,
+                                        );
+                                        reserved_word_count += text.bytes().len() as u16;
+                                        for sym in &mut self.symbol_table {
+                                            if sym.rel_addr == unadjusted_offset {
+                                                sym.size_in_words = 1 + text.bytes().len() as u16;
+                                            }
+                                        }
+                                    } else {
+                                        panic!("NaN");
                                     }
-                                } else {
-                                    panic!("NaN");
                                 }
+                                None => println!("Empty."),
                             }
-                            None => println!("Empty."),
-                        }
-                    } else if directive == "BLKW" {
-                        match line.next() {
-                            Some(token) => {
-                                println!("{:?}", token);
-                                if token.is(&Token::HexLiteral(NumberLiteral::new()))
-                                    || token.is(&Token::DecimalLiteral(NumberLiteral::new()))
-                                {
-                                    reserved_word_count += token.as_u16(None);
-                                    println!("Reserving {} words", token.as_u16(None));
-                                } else {
-                                    panic!("BLKW... NaN");
+                        } else if directive == "BLKW" {
+                            match line.next() {
+                                Some(token) => {
+                                    println!("{:?}", token);
+                                    if token.is(&Token::HexLiteral(NumberLiteral::new()))
+                                        || token.is(&Token::DecimalLiteral(NumberLiteral::new()))
+                                    {
+                                        reserved_word_count += token.as_u16(None);
+                                        println!("Reserving {} words", token.as_u16(None));
+                                    } else {
+                                        panic!("BLKW... NaN");
+                                    }
                                 }
+                                None => println!("BLKW empty."),
                             }
-                            None => println!("BLKW empty."),
                         }
                     }
-                }
 
-                _ => (),
-            };
-            // let param = match line.next() {
-            //     Some(val) => val,
-            //     None => break,
-            // };
+                    _ => (),
+                };
+                // let param = match line.next() {
+                //     Some(val) => val,
+                //     None => break,
+                // };
+            }
+
+            // for ln in &self.tokenized_lines {
+            //     let token_stream = &ln.0;
+            // }
         }
-
-        // for ln in &self.tokenized_lines {
-        //     let token_stream = &ln.0;
-        // }
-    }
-
+    */
     pub fn adjust_symbols(&mut self) {
         let mut cummulative_offset = 0;
         for symbol in &mut self.symbol_table {
-            symbol.offset_from_origin += cummulative_offset;
+            symbol.rel_addr += cummulative_offset;
             if symbol.size_in_words > 1 {
                 cummulative_offset += symbol.size_in_words - 1;
             }
@@ -859,18 +1059,22 @@ impl Assembler {
         println!("Adjusted symbol table: {:#?}", self.symbol_table);
     }
 
-    pub fn parse_directives_to_list(&mut self) -> Vec<(u16, u16)> {
+    pub fn parse_directives_to_list(&mut self) -> Result<Vec<(u16, u16)>, Vec<AsmblrErr>> {
         let mut memory_writes = Vec::new();
         let mut reserved_word_count = 0u16;
         let mut skip_count = 0;
 
-        for (line_, line_offset) in &self.tokenized_lines {
+        let mut errors = Vec::new();
+
+        for tk_ln in &self.tokenized_lines {
+            let line_ = &tk_ln.tokens;
+            let line_offset = tk_ln.rel_addr;
             let line = match line_.strip_prefix(&[Token::Label(format!(""))]) {
                 Some(without_label) => {
                     println!("LABEL: {:?}\t", line_.first().unwrap());
                     without_label
                 }
-                None => line_,
+                None => &line_,
             };
             //println!("{line_offset} \t {line:?}");
             let mut line = line.iter().take(2);
@@ -882,7 +1086,7 @@ impl Assembler {
                     println!("Found directive .{directive} {:0x}+{line_offset:0x} 0x{:03x} '{directive}'", self.orig, self.orig + line_offset);
                     if directive != "ORIG"
                         && directive != "END"
-                        && *line_offset < (self.end - self.orig/*  - 2*/)
+                        && line_offset < (self.end - self.orig/*  - 2*/)
                     //CAUSED A BUG(!)
                     {
                         // println!(
@@ -891,7 +1095,7 @@ impl Assembler {
                         // );
                     }
 
-                    let unadjusted_offset = *line_offset;
+                    let unadjusted_offset = line_offset;
                     let line_offset = line_offset + reserved_word_count;
 
                     if directive == "FILL" {
@@ -904,10 +1108,19 @@ impl Assembler {
                                     memory_writes
                                         .push((self.orig + line_offset, token.as_u16(None)));
                                 } else {
-                                    panic!("NaN");
+                                    errors.push(AsmblrErr::new(
+                                        tk_ln.src_ln_number,
+                                        format!(
+                                            "expected a number after .FILL directive, found {:?}",
+                                            token
+                                        ),
+                                    ));
                                 }
                             }
-                            None => println!("Empty."),
+                            None => errors.push(AsmblrErr::new(
+                                tk_ln.src_ln_number,
+                                format!("expected a number after .FILL directive, found nothing"),
+                            )),
                         }
                     } else if directive == "STRINGZ" {
                         match line.next() {
@@ -943,7 +1156,7 @@ impl Assembler {
                                     );
                                     reserved_word_count += text.bytes().len() as u16;
                                     for sym in &mut self.symbol_table {
-                                        if sym.offset_from_origin == unadjusted_offset {
+                                        if sym.rel_addr == unadjusted_offset {
                                             sym.size_in_words = 1 + text.bytes().len() as u16;
                                         }
                                     }
@@ -980,37 +1193,55 @@ impl Assembler {
             };
         }
         //memory_writes =  memory_writes.into_iter().map(|w|(w.0-1,w.1)).collect();
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
         println!("MEM_WRITES: {:?}", memory_writes);
-        memory_writes
+        Ok(memory_writes)
     }
 
-    pub fn parse_instructions_then_run(&mut self, trap_instructions: Option<Vec<TrapInstruction>>) {
-        let mut instructions: Vec<u16> = Vec::new();
+    pub fn link_then_execute(
+        &mut self,
+        img: ExecutableImage,
+        trap_instructions: Option<Vec<TrapInstruction>>,
+    ) {
+        // let mut instructions: Vec<u16> = match self.parse_instructions() {
+        //     Ok(instrs) => instrs,
+        //     Err(errs) => {
+        //         AsmblrErr::display(&self.file_path, &self.raw_lines, &errs);
+        //         return;
+        //     }
+        // };
 
         //println!("\n Removing leading labels.");
-        for (line, line_offset) in &self.tokenized_lines {
-            let line = match line.strip_prefix(&[Token::Label(format!(""))]) {
-                Some(without_label) => without_label,
-                None => line,
-            };
-            //println!("{line_offset} \t {line:?}");
-            match self.parse_single_instr(line.to_vec(), *line_offset) {
-                None => {}
-                Some(word) => {
-                    instructions.push(word);
-                }
-            }
-        }
+        // for tk_ln in &self.tokenized_lines {
+        //     let line_offset = tk_ln.rel_addr;
+
+        //     let line = match tk_ln.tokens.strip_prefix(&[Token::Label(format!(""))]) {
+        //         Some(without_label) => without_label,
+        //         None => &tk_ln.tokens,
+        //     };
+        //     //println!("{line_offset} \t {line:?}");
+        //     match self.parse_single_instr(line.to_vec(), line_offset) {
+        //         None => {}
+        //         Some(word) => {
+        //             instructions.push(word);
+        //         }
+        //     }
+        // }
 
         // let filtered_lines = (&self.tokenized_lines)
         //     .into_iter()
         //     .map(|(line, line_offset)| {line.into_iter().map())});
         let vm = &mut self.vm;
+        self.orig = img.origin;
         vm.set_program_origin(self.orig);
 
         trap_instructions.map(|x| {
             for trap in x {
                 vm.write_memory(trap.trap_vector, trap.origin);
+                println!("Trap vector: 0x{:x}, value: 0x:{:x} ", trap.trap_vector, trap.origin);
                 for (addr, val) in trap.memory_writes {
                     vm.write_memory(addr, val);
                 }
@@ -1018,7 +1249,15 @@ impl Assembler {
             }
         });
 
-        vm.load_binary_into_memory(instructions, self.orig);
+        //vm.load_binary_into_memory(instructions, self.orig);
+        for w in img.instructions {
+            vm.write_memory(w.rel_addr + img.origin, w.value);
+        }
+
+        for w in img.data {
+            //println!("Writing DATA: 0x{:x} <= {:x}", w.rel_addr + img.origin, w.value);
+            vm.write_memory(w.rel_addr + img.origin, w.value);
+        }
 
         vm.run_io_thread();
         thread::sleep(time::Duration::from_millis(50));
@@ -1035,36 +1274,45 @@ impl Assembler {
         }
     }
 
-    pub fn parse_instructions(&mut self) -> Vec<u16> {
+    pub fn parse_instructions(&mut self) -> Result<Vec<u16>, Vec<AsmblrErr>> {
         let mut instructions: Vec<u16> = Vec::new();
+        let mut errors = Vec::new();
 
         //println!("\n Removing leading labels.");
-        for (line, line_offset) in &self.tokenized_lines {
-            let line = match line.strip_prefix(&[Token::Label(format!(""))]) {
+        for tk_ln in &self.tokenized_lines {
+            let line = match tk_ln.tokens.strip_prefix(&[Token::Label(format!(""))]) {
                 Some(without_label) => without_label,
-                None => line,
+                None => &tk_ln.tokens,
             };
             //println!("{line_offset} \t {line:?}");
-            match self.parse_single_instr(line.to_vec(), *line_offset) {
-                None => {}
-                Some(word) => {
-                    instructions.push(word);
-                }
+            match self.parse_single_instr(line.to_vec(), tk_ln.rel_addr) {
+                Ok(instr) => match instr {
+                    None => {}
+                    Some(word) => {
+                        instructions.push(word);
+                    }
+                },
+                Err(msg) => errors.push(AsmblrErr::new(tk_ln.src_ln_number, msg)),
             }
+        }
+
+        if !errors.is_empty() {
+            //println!("{errors:?}");
+            return Err(errors);
         }
 
         // let filtered_lines = (&self.tokenized_lines)
         //     .into_iter()
         //     .map(|(line, line_offset)| {line.into_iter().map())});
-        return instructions;
+        Ok(instructions)
     }
 
-    fn parse_single_instr(&self, line: Vec<Token>, line_offset: u16) -> Option<u16> {
+    fn parse_single_instr(&self, tokens: Vec<Token>, rel_addr: u16) -> Result<Option<u16>, String> {
         let target_instruction: &InstrDef; // = &InstrDef::new(OP::RES, 0, vec![]);
 
-        if line.starts_with(&[Token::Instruction(format!(""))]) {
+        if tokens.starts_with(&[Token::Instruction(format!(""))]) {
             //Find which instruction it is;
-            match line.first().unwrap() {
+            match tokens.first().unwrap() {
                 Token::Instruction(instr) => {
                     //println!("{:03} Searching for instruction '{instr}'.", line_offset);
                     target_instruction = &self.instruction_set[&instr.to_ascii_uppercase()];
@@ -1077,7 +1325,7 @@ impl Assembler {
             }
         } else {
             //println!("Ignoring line {line:?}");
-            return None;
+            return Ok(None);
         }
 
         //Get line's paramaters
@@ -1086,7 +1334,7 @@ impl Assembler {
 
         //let mut previous: Vec<Token> = Vec::new();
 
-        for i in 0..line.len() {
+        for i in 0..tokens.len() {
             if i == 0 {
                 //Ignore instruction
                 continue;
@@ -1095,32 +1343,32 @@ impl Assembler {
             // println!("Token: '{:?}', i = {i}, arg_index = {arg_index}", line[i]);
 
             if arg_index == target_instruction.params.len() {
-                panic!(
+                return Err(format!(
                     "Expected {} operands, found {}. \t[{:?}]",
                     target_instruction.params.len(),
                     arg_index,
-                    line
-                );
+                    tokens
+                ));
             }
 
-            if (i % 2) == 0 && !line[i].is(&Token::Comma) {
-                panic!("Expecting comma between params. {:?}", line);
+            if (i % 2) == 0 && !tokens[i].is(&Token::Comma) {
+                return Err(format!("Expecting comma between params. {:?}", tokens));
             }
 
-            if line[i].is(&Token::Comma) {
+            if tokens[i].is(&Token::Comma) {
                 continue;
             }
 
-            if i % 2 != 0 && !line[i].is_valid_arg(&target_instruction.params[arg_index]) {
-                panic!(
+            if i % 2 != 0 && !tokens[i].is_valid_arg(&target_instruction.params[arg_index]) {
+                return Err(format!(
                     "Expected {:?} for instruction '{}', found token '{:?}'",
-                    target_instruction.params[arg_index], target_instruction.opcode, line[i]
-                );
+                    target_instruction.params[arg_index], target_instruction.opcode, tokens[i]
+                ));
             }
 
             //previous.push(line[i].clone());
 
-            args.push(line[i].clone());
+            args.push(tokens[i].clone());
             arg_index += 1;
         }
 
@@ -1135,17 +1383,17 @@ impl Assembler {
         //
 
         if target_instruction.params.len() != args.len() {
-            panic!(
-                "ERROR: Expected {} arguments, but found {}.",
+            return Err(format!(
+                "Expected {} arguments, but found {}.",
                 target_instruction.params.len(),
                 args.len()
-            );
+            ));
         }
         for k in 0..target_instruction.params.len() {
             match target_instruction.params[k] {
                 Param::Register(pos) => match args[k] {
                     Token::Register(r) => word += r << pos,
-                    _ => panic!(),
+                    _ => return Err(format!("Expected register as argument")),
                 },
 
                 Param::RegisterORImm5 => {
@@ -1154,11 +1402,11 @@ impl Assembler {
                             let mut num: u16 = val.value;
                             println!("|Imm5|: {num:016b} ({num}))");
                             if num > 2u16.pow(4) {
-                                panic!("Invalid imm5");
+                                return Err(format!("Invalid imm5, MAX +/-15"));
                             }
 
                             if matches!(val.sign, Sign::MINUS) {
-                                println!("Negative imm5. {num}");
+                                //println!("Negative imm5. {num}");
                                 num = binary_utils::truncate_to_bit(binary_utils::invert_sign(num), 5) /*+ binary_utils::flag_set_mask(5)*/;
                             }
                             word += num;
@@ -1168,7 +1416,7 @@ impl Assembler {
                         Token::Register(reg) => {
                             word += reg;
                         }
-                        _ => panic!(),
+                        _ => return Err(format!("Expected register or Imm5 (number)")),
                     }
                 }
 
@@ -1198,27 +1446,27 @@ impl Assembler {
 
                             for sym in &self.symbol_table {
                                 if sym.name.to_ascii_uppercase() == *lbl.to_ascii_uppercase() {
-                                    symbol_value = Some(sym.offset_from_origin);
+                                    symbol_value = Some(sym.rel_addr);
                                 }
                             }
 
                             if symbol_value == None {
-                                panic!("Undefined label '{lbl}'");
+                                return Err(format!("Undefined label '{lbl}'"));
                             }
                             let symbol_value = symbol_value.unwrap();
 
                             //PC-Offset-9
-                            println!(
-                                "Label: {symbol_value}, PC: {line_offset}. L-PC = {}",
-                                binary_utils::as_negative_i16(binary_utils::add_2s_complement(
-                                    symbol_value,
-                                    binary_utils::invert_sign(line_offset)
-                                ))
-                            );
+                            // println!(
+                            //     "Label: {symbol_value}, PC: {rel_addr}. L-PC = {}",
+                            //     binary_utils::as_negative_i16(binary_utils::add_2s_complement(
+                            //         symbol_value,
+                            //         binary_utils::invert_sign(rel_addr)
+                            //     ))
+                            // );
 
                             let pc_offset_9 = binary_utils::truncate_to_n_bit(binary_utils::add_2s_complement(
                                     symbol_value,
-                                    binary_utils::invert_sign(line_offset+1),),10) /*<< 7
+                                    binary_utils::invert_sign(rel_addr+1),),10) /*<< 7
                                     >> 7*/
                             ;
                             //WARNING
@@ -1234,7 +1482,7 @@ impl Assembler {
                             word += pc_offset_9;
                         }
 
-                        _ => panic!(),
+                        _ => return Err(format!("Expected label as argument")),
                     }
                 }
                 _ => {}
@@ -1242,7 +1490,7 @@ impl Assembler {
         }
 
         println!("Instr: {word:016b}");
-        return Some(word);
+        Ok(Some(word))
     }
 }
 
@@ -1369,7 +1617,7 @@ impl Parser {
         let nzp = flag_set_mask(10) + flag_set_mask(9) + flag_set_mask(11);
         instr_set.insert(
             String::from("JMP"),
-            InstrDef::new(OP::JMP, 0, vec![Param::Label]),
+            InstrDef::new(OP::JMP, 0, vec![Param::Register(6)]),
         );
 
         instr_set.insert(

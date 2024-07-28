@@ -7,10 +7,40 @@ pub enum FileLoadError {
     InvalidBinary,
 }
 
-pub enum AssemblerError {
-    FailureToTokenize,
-    InvalidString,
+#[derive(Clone, Debug)]
+pub struct AsmblrErr{
+    pub line_number: u16,
+    pub msg: String,
 }
+
+impl AsmblrErr{
+    pub fn new(line_number: u16, message: String) -> Self{
+        AsmblrErr{
+            line_number,
+            msg: message,
+        }
+    }
+
+    pub fn display(file_path: &str, raw_lines: &Vec<String>, errors: &Vec<Self>){
+        for e in errors{
+            let msg = &e.msg;
+            let line = e.line_number;
+            let line_text = &raw_lines[e.line_number as usize - 1];
+            // eprintln!("\nSyntax error:{msg}");
+            // eprintln!("in\t({file_path}");
+            // eprintln!("    |");
+            // eprintln!("{line:4}|\t{line_text}");
+            // eprintln!("    |");
+
+            eprintln!(
+                "\nSyntax error ('{}' (line {})):\n\n{:02}|{}\n\n\t{}",
+                file_path, e.line_number, e.line_number, raw_lines[e.line_number as usize - 1], e.msg
+            );
+        }
+    }
+}
+
+
 
 #[derive(Debug)]
 pub enum VirtualMachineErrorType {

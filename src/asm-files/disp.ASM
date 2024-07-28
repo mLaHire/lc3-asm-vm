@@ -1,18 +1,11 @@
-        .ORIG x3000
-        LD R0, A
-        LD R1, B
-L0      ADD R2, R2, R1
-        ADD R0, R0, #-1
-        BRp L0
-        ST R2, VALUE
-        ;LD R0, ANS
-        ;LD R3, TOASCII
-        ;ADD R0, R0, R3
-        ;TRAP x21
-        LD R2, ZERO
-        LD R1, ZERO
-        LD R0, ZERO
-        IS_NEGATIVE     LD          R5, value
+                .ORIG       x3000
+; INITIALISE    
+; R5 = &C100 
+; R4 = Offset for R5
+; R1 = *(R5), i.e. #-100, then #-10, etc
+; R2 = digit_count
+; R7 = temp storage
+IS_NEGATIVE     LD          R5, value
                 BRzp        POSITIVE
                 NOT         R5, R5
                 ADD         R5, R5, #1
@@ -45,11 +38,6 @@ SUBTR_100       ADD         R2, R2, #1
                 LD          R6, IS_NUMBER
                 ADD         R6, R0, R6
                 BRn         DONT_PRINT
-                LD          R1, NON_ZERO
-                ADD         R6, R6, R1
-                BRz         DONT_PRINT
-                ADD         R6, R6, #1
-                ST          R6, NON_ZERO
                 TRAP        x21
                 ;BRnzp       SKIP_ZERO
                 ;
@@ -65,18 +53,13 @@ EXIT            LEA         R6, C1
                 NOT         R6, R6
                 ADD         R6, R6, #1
                 ADD         R2, R4, R6 ;Find difference between power and 10^1
-                BRp        ESC
+                BRzp        ESC
 L2              LD          R0, ASCII
                 TRAP        x21
                 ADD         R2, R2, #1
                 BRnz       L2
 ESC              HALT
-        .END
-A       .FILL #93
-B       .FILL #117
-ANS       .FILL #0
-TOASCII         .FILL #48
-TONUMBER        .FILL #-48
+                .END
 M10k            .FILL	    #-10000
 M1k             .FILL	    #-1000
 C100            .FILL	    #-100
@@ -94,7 +77,6 @@ ANS_10           .FILL      #0
 ANS_1            .FILL      #0
 ZERO            .FILL	    #0
 ASCII           .FILL	    #48
-IS_NUMBER       .FILL	    #-48
-NON_ZERO        .FILL	    #0
-VALUE           .FILL	    #0
+IS_NUMBER       .FILL	    #-49
+VALUE           .FILL	    #500
 MINUS           .STRINGZ	"-"

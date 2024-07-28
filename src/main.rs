@@ -33,21 +33,38 @@ fn main() {
 
     let mut asm = assemble::Assembler::new(&path);
     asm.load();
-    asm.tokenize();
-    match asm.parse_origin_and_end() {
-        Err(e) => {
-            eprintln!("[ASM]\tError finding program .ORIG and .END: {e}");
+    // asm.tokenize();
+    // match asm.parse_origin_and_end() {
+    //     Err(errors) => {
+    //         error::AsmblrErr::display(&path, &asm.raw_lines, &errors);
+    //         return;
+    //     }
+    //     Ok(r) => println!("[ASM] Program\t.ORIG {:x}\t.END{:x}", r.0, r.1),
+    // }
+    // match asm.load_symbols() {
+    //     Ok(_) => (),
+    //     Err(errors) => {
+    //         error::AsmblrErr::display(&path, &asm.raw_lines, &errors);
+    //         return;
+    //     }
+    
+    // }
+
+    // asm.parse_directives();
+    // asm.adjust_symbols();
+    let img = match asm.assemble(){
+        Ok(img) => img,
+        Err(errors) => {
+            
+            error::AsmblrErr::display(&path, &asm.raw_lines, &errors);
+            
+            println!("\n[ASM]\tAssembly failed, {} error(s).", errors.len());
             return;
         }
-        Ok(r) => println!("[ASM] Program\t.ORIG {:x}\t.END{:x}", r.0, r.1),
-    }
-    asm.load_symbols();
-
-    asm.parse_directives();
-    asm.adjust_symbols();
+    };
     asm.vm.debug_enabled = debug_enabled;
     let now = Instant::now();
-    asm.parse_instructions_then_run(Some(vec![putc_x21, puts_x22, getc_x23]));
+    asm.link_then_execute(img, Some(vec![putc_x21, puts_x22, getc_x23]));
     let elapsed = now.elapsed();
     println!("\nExecuted {} instructions in {:?}", asm.vm.instruction_count, elapsed);
 

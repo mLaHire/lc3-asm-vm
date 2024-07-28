@@ -404,7 +404,7 @@ impl VirtualMachine {
             .expect("Unable to convert from u16 to usize to access memmory.");
 
         if self.debug_enabled {
-            println!("[READ]\tMEM[{address:04x}] (={})\t", self.memory[address]);
+            println!("[READ]\tMEM[{address:04x}] (={})\t", binary_utils::as_negative_i32(self.memory[address]));
         }
         self.memory[address]
     }
@@ -518,6 +518,12 @@ impl VirtualMachine {
             _ => panic!("No valid instruction."),
         }
         self.instruction_count += 1;
+        if self.debug_enabled{
+            for i in 0..=7{
+                print!("|R{i}: {:05}| ", binary_utils::as_negative_i32(self.read_reg(i)));
+            }
+            print!("\n");
+        }
     }
 
     pub fn ld_instr_to_mem(&mut self, instr: u16, addr: usize) {
@@ -572,7 +578,7 @@ impl VirtualMachine {
         if !flag_is_set(instr, 5) {
             let src_r2 = get_register_at(instr, (0, 2));
             result = binary_utils::add_2s_complement(self.read_reg(src_r1), self.read_reg(src_r2));
-            //println!("R{dest_r1} <- {} + {} = {result}", self.read_reg(src_r1), self.read_reg(src_r2));
+           // println!("R{dest_r1} <- {} + {} = {}", binary_utils::as_negative_i32(self.read_reg(src_r1)), binary_utils::as_negative_i32(self.read_reg(src_r2)), binary_utils::as_negative_i32(result));
         } else {
             let imm5_value = get_sign_ext_value(instr, 5);
             result = add_2s_complement(self.read_reg(src_r1), imm5_value);
@@ -780,7 +786,12 @@ impl VirtualMachine {
     }
 
     pub fn update_condition(&mut self, result: u16) {
-        let intial = self.registers.condition.clone();
+        let intial = if self.debug_enabled{
+            self.registers.condition.clone() 
+        }else{ 
+            ConditionCode::ZERO
+        };
+        
         if result == 0 {
             self.registers.condition = ConditionCode::ZERO;
         } else if is_negative(result) {

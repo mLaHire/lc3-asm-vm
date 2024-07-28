@@ -129,11 +129,11 @@ pub fn is_negative(word: u16) -> bool {
     flag_is_set(word, 15)
 }
 
-pub fn as_negative_i16(word: u16) -> i16 {
+pub fn as_negative_i32(word: u16) -> i32 {
     if !is_negative(word) {
-        word as i16
+        word as i32
     } else {
-        -((!word + 1) as i16)
+        -(add_2s_complement(word.not(), 1) as i32)
     }
 }
 
