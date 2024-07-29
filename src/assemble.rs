@@ -48,6 +48,7 @@ impl NumberLiteral {
 pub enum Token {
     DecimalLiteral(NumberLiteral),
     HexLiteral(NumberLiteral),
+    BinLiteral(NumberLiteral),
     Register(u16),
     Label(String),
     Comma,
@@ -183,6 +184,11 @@ impl Token {
                         continue;
                     }
 
+                    if c == 'b' {
+                        current_token = Some(Self::BinLiteral(NumberLiteral::new()));
+                        continue;
+                    }
+
                     if c == '.' {
                         current_token = Some(Self::Directive(String::new()));
                         continue;
@@ -203,7 +209,9 @@ impl Token {
                         //continue;
                     }
 
-                    return Err(format!("Invalid character '{}' ", c));
+                    if !c.is_ascii(){
+                        return Err(format!("Invalid non-ASCII character '{}' ", c));
+                    }
                 }
 
                 Some(ref token) => {
@@ -357,9 +365,9 @@ impl Token {
                                             ));
                                     }
                                 };
-                                if value > 0xFFFF {
+                                if value > 0xffff {
                                     return Err(format!(
-                                        "Hexadecimal literal {:0x} is out of range, MAX +/-{}",
+                                        "Hexadecimal literal {:0x} is out of range, MAX +/-0x{:0x}",
                                         value, 2u32.pow(15)
                                     ));
                                 }
@@ -385,6 +393,75 @@ impl Token {
                             }
                         }
 
+                        Self::BinLiteral(_) => {
+                            if !(c == '0' || c == '1')
+                                && current_token_text.len() != 0
+                                && (c != '-')
+                                && c != '\n'
+                            {
+                                return Err(format!("Invalid binary literal."));
+                            } else {
+                                if c == '-' {
+                                    current_token_text.push(c);
+                                    continue;
+                                };
+                            }
+
+                            if (c == '0' || c == '1') {
+                                current_token_text.push(c);
+                            } else if c == ',' || c == ' ' || c == '\n' || c == '\t' {
+                                if index + 1 == line.text.len() {
+                                    current_token_text.push(c);
+                                }
+
+                                let mut interpretation: NumberLiteral = NumberLiteral::new();
+
+                                if current_token_text.starts_with("-") {
+                                    interpretation.sign = Sign::MINUS;
+                                }
+                                let text_to_parse =
+                                    current_token_text.trim_start_matches('-').to_string();
+                                //println!("'{}'", current_token_text);
+                                // break;
+                                let value: u32 = match u32::from_str_radix(
+                                    &text_to_parse.trim(),
+                                    2,
+                                ) {
+                                    Ok(val) => val,
+                                    Err(e) => {
+                                        return Err(format!(
+                                                "Invalid binary literal 'b{current_token_text}': {e}"
+                                            ));
+                                    }
+                                };
+                                if value > 2u32.pow(15) {
+                                    return Err(format!(
+                                        "Binary literal b{:0b} is out of range, MAX +/-{}",
+                                        value, 2u32.pow(15)
+                                    ));
+                                }
+
+                                interpretation.value = value
+                                    .try_into()
+                                    .expect("Unable to convert binary literal u32 to u16");
+
+                                interpretation.bits =
+                                    binary_utils::bits_required_for_number(interpretation.value);
+
+                                token_stream.push(Self::HexLiteral(interpretation));
+                                current_token_text.clear();
+
+                                if c == ',' {
+                                    token_stream.push(Self::Comma);
+                                }
+                            } else {
+                                current_token_text.push(c);
+                                return Err(format!(
+                                    "Invalid binary: 'x{current_token_text}'."
+                                ));
+                            }
+                        }
+                        
                         Self::Directive(_) => {
                             if !c.is_ascii_alphabetic() {
                                 if c == ',' || c == ' ' || c == '\n' || c == '\t' {
@@ -470,7 +547,17 @@ impl TrapInstruction {
     pub fn new(filename: &str, trap_vector: u16) -> Self {
         let mut asm = Assembler::new(format!(".\\src\\asm_files\\trap\\{}.asm", filename).as_str());
         asm.load();
-        asm.tokenize();
+        match asm.tokenize() {
+            Ok (_) => (),
+            Err(errors) => {
+                AsmblrErr::display(
+                    &format!(".\\src\\asm_files\\trap\\{}.asm", filename),
+                    &asm.raw_lines,
+                    &errors,
+                );
+                panic!();
+            }
+        }
         match asm.parse_origin_and_end() {
             Err(errors) => {
                 AsmblrErr::display(
@@ -690,6 +777,7 @@ impl Assembler {
             let n: u16 = i.try_into().unwrap();
 
             if line.is_empty() {
+                //skip_count += 1; //Attempt to fix bug with empty lines skewing symbol gen
                 continue;
             }
 
@@ -863,7 +951,7 @@ impl Assembler {
                         }
                     }
 
-                    Token::DecimalLiteral(val) | Token::HexLiteral(val) => {
+                    Token::DecimalLiteral(val) | Token::HexLiteral(val)| Token::BinLiteral(val) => {
                         if !expecting_origin_value_next && !found_orig {
                             errors.push(AsmblrErr::new(
                                 ln.src_ln_number,
