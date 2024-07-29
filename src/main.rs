@@ -12,7 +12,7 @@ fn main() {
     let getc_x23 = assemble::TrapInstruction::new("getc", 0x23);
     let mut term = Term::stdout();
 
-    print!("Enter local file path: .\\src\\asm-files\\");
+    print!("Enter local file path: .\\src\\asm_files\\");
     let buffer = match term.read_line() {
         Ok(p) => p,
         Err(e) => panic!("{e}"),
@@ -20,7 +20,7 @@ fn main() {
     .trim()
     .to_owned();
 
-    let mut path = String::from(".\\src\\asm-files\\");
+    let mut path = String::from(".\\src\\asm_files\\");
     path.push_str(&buffer);
     print!("Debug_enabled? (y/n)");
 

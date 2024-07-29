@@ -468,13 +468,13 @@ pub struct TrapInstruction {
 
 impl TrapInstruction {
     pub fn new(filename: &str, trap_vector: u16) -> Self {
-        let mut asm = Assembler::new(format!(".\\src\\asm-files\\trap\\{}.asm", filename).as_str());
+        let mut asm = Assembler::new(format!(".\\src\\asm_files\\trap\\{}.asm", filename).as_str());
         asm.load();
         asm.tokenize();
         match asm.parse_origin_and_end() {
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!(".\\src\\asm-files\\trap\\{}.asm", filename),
+                    &format!(".\\src\\asm_files\\trap\\{}.asm", filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -489,7 +489,7 @@ impl TrapInstruction {
             Ok(writes) => writes,
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!(".\\src\\asm-files\\trap\\{}.asm", filename),
+                    &format!(".\\src\\asm_files\\trap\\{}.asm", filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -500,7 +500,7 @@ impl TrapInstruction {
             Ok(writes) => writes,
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!(".\\src\\asm-files\\trap\\{}.asm", filename),
+                    &format!(".\\src\\asm_files\\trap\\{}.asm", filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -1084,16 +1084,16 @@ impl Assembler {
             } {
                 &Token::Directive(ref directive) => {
                     println!("Found directive .{directive} {:0x}+{line_offset:0x} 0x{:03x} '{directive}'", self.orig, self.orig + line_offset);
-                    if directive != "ORIG"
-                        && directive != "END"
-                        && line_offset < (self.end - self.orig/*  - 2*/)
-                    //CAUSED A BUG(!)
-                    {
-                        // println!(
-                        //     "WARNING: Expected .END before directive .{directive} line offset = {}",
-                        //     *line_offset
-                        // );
-                    }
+                    // if directive != "ORIG"
+                    //     && directive != "END"
+                    //     && line_offset < (self.end - self.orig/*  - 2*/)
+                    // //CAUSED A BUG(!)
+                    // {
+                    //     // println!(
+                    //     //     "WARNING: Expected .END before directive .{directive} line offset = {}",
+                    //     //     *line_offset
+                    //     // );
+                    // }
 
                     let unadjusted_offset = line_offset;
                     let line_offset = line_offset + reserved_word_count;
@@ -1267,9 +1267,9 @@ impl Assembler {
             vm.execute();
 
             if !vm.run {
-                thread::sleep(time::Duration::from_millis(100));
-                print!("Ending VM instance...");
-                print!("Done.\n");
+                thread::sleep(time::Duration::from_millis(10));
+                // print!("Ending VM instance...");
+                // print!("Done.\n");
 
                 break;
             }
@@ -1632,7 +1632,7 @@ impl Parser {
             InstrDef::new(OP::JSR, binary_utils::flag_set_mask(11), vec![Param::Label]),
         );
 
-        instr_set.insert(String::from("JSSR"), InstrDef::new(OP::RES, 0, Vec::new()));
+        instr_set.insert(String::from("JSSR"), InstrDef::new(OP::JSR, 0, vec![Param::Register(6)]));
 
         instr_set.insert(
             String::from("LD"),

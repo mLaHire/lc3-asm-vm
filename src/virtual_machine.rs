@@ -514,6 +514,7 @@ impl VirtualMachine {
             OP::LEA => self.execute_op_lea(instr),
             OP::LDR => self.execute_op_ldr(instr),
             OP::STR => self.execute_op_str(instr),
+            OP::JSR => self.execute_op_jsr(instr),
             OP::RES => self.run = false,
             _ => panic!("No valid instruction."),
         }
@@ -741,12 +742,12 @@ impl VirtualMachine {
     fn execute_op_ldi(&mut self, instr: u16) {
         let dest_reg = get_register_at(instr, (9, 11));
 
-        let pc_offset_9_ext = get_sign_ext_value(instr, 9);
+        let pc_offset_9_sext = get_sign_ext_value(instr, 9);
 
         /*dbg!(self.program_counter + pc_offset_9_ext);
         dbg!(self.read_memory(self.program_counter + pc_offset_9_ext));*/
 
-        let address_to_load_from = self.read_memory(self.program_counter + pc_offset_9_ext);
+        let address_to_load_from = self.read_memory(self.program_counter + pc_offset_9_sext);
         let value_at_address = self.read_memory(address_to_load_from);
 
         self.set_reg(dest_reg, value_at_address);
@@ -778,12 +779,30 @@ impl VirtualMachine {
         //let
     }
 
+    //JSR LABEL (Pc offset 11) [instr[11] = 1]
+    //JSR(R)    REG             [instr[11] = 0]
+    fn execute_op_jsr(&mut self, instr: u16) {
+        let subroutine_addr;
+
+        if flag_is_set(instr, 11){
+            //JSR
+            let pcoffset11_sext = get_sign_ext_value(instr, 11);
+            subroutine_addr = pcoffset11_sext + self.program_counter;
+        }else{
+            subroutine_addr = get_register_at(instr, (6, 8));
+        }
+
+        self.set_reg(7, self.program_counter); //Save addr of next instr
+        self.program_counter = subroutine_addr;
+    }
     pub fn set_reg(&mut self, register: u16, value: u16) {
         if register > 7 {
             panic!("Invalid write_register R{register}.")
         }
         self.registers.set(register, value);
     }
+
+
 
     pub fn update_condition(&mut self, result: u16) {
         let intial = if self.debug_enabled{
