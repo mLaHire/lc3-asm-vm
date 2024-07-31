@@ -2,6 +2,16 @@
                 .ORIG       x0
                 LEA         R5, CONST_10 ;R5 = pointer to 10k
                 LD          R6, INT
+
+FIRST           
+                ADD         R7, R6, R1
+                BRn         done
+                ST          R7, BLOCK
+                LD          R6, BLOCK
+                
+
+
+
                 ADD         R3, R3, #-3 ;Power counter 
 START           LDR         R1, R5, #0 ;Set R1 to the current power of #10 (-10^
 INNER_LOOP      ADD         R2, R2, #1 ;Increment local counter

@@ -23,8 +23,9 @@ LOOP2   ADD      R2,R2,#0
         ADD      R1,R1,#-1
         ADD      R2,R2,#-2    ;; decrease R2 by 2
         BR       LOOP2
-        TRAP x22
-DONE2   HALT
+        
+DONE2   TRAP x22
+        HALT
 
 FILE    .STRINGZ "This is so much fun!"
         .END

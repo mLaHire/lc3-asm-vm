@@ -11,5 +11,5 @@ L2 		LDR 		R0, R1, xC
 		BRnzp 			L2
 GLUE 	HALT
 P1		.FILL 		xB
-P2		.STRINGZ 	"HBoeoakteSmtHaotren!s"
+P2		.STRINGZ 	"Abcdefghijklmnop";"HBoeoakteSmtHaotren!s"
 		.END 

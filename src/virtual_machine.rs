@@ -178,7 +178,6 @@ impl VirtualMachine {
 
         let kb_registers = self.keyboard_reg_mutex.clone();
         let disp_registers = self.display_reg_mutex.clone();
-
         println!("[IO]\tStarting IO threads...");
         thread::spawn(move || {
             let mut term = Term::stdout();
@@ -253,7 +252,7 @@ impl VirtualMachine {
                         Err(e) => {
                             // if attempt_count > 10 {
                             //     println!("[IO] Waiting for keyboard_register_mutex. {e}");
-                                
+
                             // }
                             // attempt_count += 1;
                             // thread::sleep(time::Duration::from_millis(5 + attempt_count));
@@ -320,7 +319,6 @@ impl VirtualMachine {
                     Err(e) => {
                         if attempt_count > 10 {
                             println!("[CPU] Waiting for keyboard_register_mutex. {e}");
-                            
                         }
                         attempt_count += 1;
                         thread::sleep(time::Duration::from_millis(5 + attempt_count));
@@ -404,7 +402,10 @@ impl VirtualMachine {
             .expect("Unable to convert from u16 to usize to access memmory.");
 
         if self.debug_enabled {
-            println!("[READ]\tMEM[{address:04x}] (={})\t", binary_utils::as_negative_i32(self.memory[address]));
+            println!(
+                "[READ]\tMEM[{address:04x}] (={})\t",
+                binary_utils::as_negative_i32(self.memory[address])
+            );
         }
         self.memory[address]
     }
@@ -431,14 +432,14 @@ impl VirtualMachine {
                 let lock_attempt = self.display_reg_mutex.try_lock();
                 match lock_attempt {
                     Err(e) => {
-                        if attempt_count > 10{
+                        if attempt_count > 10 {
                             //thread::sleep(time::Duration::from_millis(attempt_count-5));
                             //println!("[CPU] [WRITE] Waiting for display_reg_mutex. {e}");
                         }
-                        attempt_count +=1;
-                        
+                        attempt_count += 1;
+
                         continue;
-                    },
+                    }
 
                     Ok(lock) => {
                         break lock;
@@ -496,10 +497,16 @@ impl VirtualMachine {
         );
     }
 
-    pub fn execute(&mut self) {
+    pub fn execute(&mut self, symbol_table: Option<&crate::assemble::SymbolTable>) {
         //println!("{:?}", self.instruction.opcode);
         let instr = self.current_instruction.word;
-
+        let disassem = crate::assemble::Parser::dissasemble_memory(
+            instr,
+            Some(self.program_counter),
+            symbol_table,
+            None,
+        );
+        println!("0x{:04x}\t{instr:016b}\t\t{disassem}", self.program_counter-1);
         match self.current_instruction.opcode {
             OP::ADD => self.execute_op_add(instr),
             OP::AND => self.execute_op_and(instr),
@@ -519,9 +526,12 @@ impl VirtualMachine {
             _ => panic!("No valid instruction."),
         }
         self.instruction_count += 1;
-        if self.debug_enabled{
-            for i in 0..=7{
-                print!("|R{i}: {:05}| ", binary_utils::as_negative_i32(self.read_reg(i)));
+        if self.debug_enabled {
+            for i in 0..=7 {
+                print!(
+                    "|R{i}: {:05}| ",
+                    binary_utils::as_negative_i32(self.read_reg(i))
+                );
             }
             print!("\n");
         }
@@ -579,7 +589,7 @@ impl VirtualMachine {
         if !flag_is_set(instr, 5) {
             let src_r2 = get_register_at(instr, (0, 2));
             result = binary_utils::add_2s_complement(self.read_reg(src_r1), self.read_reg(src_r2));
-           // println!("R{dest_r1} <- {} + {} = {}", binary_utils::as_negative_i32(self.read_reg(src_r1)), binary_utils::as_negative_i32(self.read_reg(src_r2)), binary_utils::as_negative_i32(result));
+            // println!("R{dest_r1} <- {} + {} = {}", binary_utils::as_negative_i32(self.read_reg(src_r1)), binary_utils::as_negative_i32(self.read_reg(src_r2)), binary_utils::as_negative_i32(result));
         } else {
             let imm5_value = get_sign_ext_value(instr, 5);
             result = add_2s_complement(self.read_reg(src_r1), imm5_value);
@@ -784,11 +794,11 @@ impl VirtualMachine {
     fn execute_op_jsr(&mut self, instr: u16) {
         let subroutine_addr;
 
-        if flag_is_set(instr, 11){
+        if flag_is_set(instr, 11) {
             //JSR
             let pcoffset11_sext = get_sign_ext_value(instr, 11);
             subroutine_addr = pcoffset11_sext + self.program_counter;
-        }else{
+        } else {
             subroutine_addr = get_register_at(instr, (6, 8));
         }
 
@@ -802,15 +812,13 @@ impl VirtualMachine {
         self.registers.set(register, value);
     }
 
-
-
     pub fn update_condition(&mut self, result: u16) {
-        let intial = if self.debug_enabled{
-            self.registers.condition.clone() 
-        }else{ 
+        let intial = if self.debug_enabled {
+            self.registers.condition.clone()
+        } else {
             ConditionCode::ZERO
         };
-        
+
         if result == 0 {
             self.registers.condition = ConditionCode::ZERO;
         } else if is_negative(result) {
@@ -819,14 +827,19 @@ impl VirtualMachine {
             self.registers.condition = ConditionCode::POSITIVE;
         }
         if self.debug_enabled {
-            
-            println!("[CPU][CC]\t\t\t[{}]\t{}", match self.registers.condition{
-                ConditionCode::NEGATIVE => "-",
-                ConditionCode::ZERO => "0",
-                ConditionCode::POSITIVE => "+",
-            }, if intial != self.registers.condition{"[CHANGE]\n"}else{""});
-
-            
+            println!(
+                "[CPU][CC]\t\t\t[{}]\t{}",
+                match self.registers.condition {
+                    ConditionCode::NEGATIVE => "-",
+                    ConditionCode::ZERO => "0",
+                    ConditionCode::POSITIVE => "+",
+                },
+                if intial != self.registers.condition {
+                    "[CHANGE]\n"
+                } else {
+                    ""
+                }
+            );
         }
     }
 

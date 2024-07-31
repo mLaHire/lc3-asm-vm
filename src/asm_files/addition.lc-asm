@@ -1,3 +1,4 @@
+.ORIG #0
 ; Should ignore this line
 ;and this
 LABEL   ADD R0, R0, #10
@@ -5,10 +6,11 @@ LABEL   ADD R0, R0, #10
         JMP LABEL
 
 0invalidLabel
-xInvalidLabel
-.dir
+;xInvalidLabel
+;.dir
 
 ENTER ;should pick this up fine
 ;LABEL ;should crash here
 
 JMP ???
+.END

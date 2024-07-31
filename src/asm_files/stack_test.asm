@@ -1,18 +1,13 @@
                         .ORIG       x3000
-                        LEA         R0, msg
-                        TRAP        x22
-                        LD          R0, endl
-                        TRAP        x21
-                        LD          R0, endl
-                        TRAP        x21
+                        
                         LD          R6, stack_start_addr
                         LEA         R3, text 
-                        LEA         R0, fwd
-                        TRAP        x22
-                        LEA         R0, text
-                        TRAP        x22
-                        LD          R0, endl
+                        LDR         R0, R3, #0
+                        JSR         _push
+                        JSR         _pop
                         TRAP        x21
+                        HALT
+
 
                         ;HALT
                         LDR         R0, R3, #0
@@ -42,17 +37,16 @@
                         ;Stack should be empty now, check
                         JSR         _pop
                         ADD         R1, R1, #-1 ;expect R1 == 1 
-                        BRz         underflw_test_passed
+                        BRz         test_passed
                         LEA         R0, error_msg
                         TRAP        x22
                         LD          R0, endl
                         TRAP        x21
                         HALT
-underflw_test_passed    LEA         R0, stack_underflow_msg
+test_passed             LEA         R0, stack_underflow_msg
                         TRAP        x22
                         LD          R0, endl
                         TRAP        x21
-                        
                         HALT
 
 ; Push value in R0 to stack, set R0 to #0 if succesful, #1 on overflow
@@ -80,16 +74,14 @@ _pop                    ST          R2, save_r2
                         ADD         R2, R2, #-1
                         NOT         R2, R2
                         ADD         R2, R2, #1
-                       ; ADD         R2, R2, #1
                         ADD         R2, R2, R6
-                        BRp        _pop_empty
+                        BRnz        _pop_empty
                         LDR         R0, R6, #0
                         ADD         R6, R6, #1
                         AND         R1, R1, #0
                         BRnzp       _pop_ret
         _pop_empty      AND         R1, R1, #0
                         ADD         R1, R1, #1
-                        AND         R0, R0, #0
                         ;LEA         R0, stack_underflow_msg
                         ;TRAP        x22
         _pop_ret        LD          R2, save_r2
@@ -99,8 +91,8 @@ stack_start_addr        .FILL       x4000
 stack_min_addr          .FILL	    x3FF1
 stack_max_capacity      .FILL       xF
 stack_overflow_msg      .STRINGZ       "Stack overflow."
-stack_underflow_msg     .STRINGZ	    "[OK] Stack is empty, underflow detected."
-error_msg               .STRINGZ	"[ERR] Error, pop did not detect underflow."
+stack_underflow_msg     .STRINGZ	    "Stack is empty, underflow detected."
+error_msg               .STRINGZ	"Error, pop did not detect underflow."
 msg                     .STRINGZ	"*Stack demo - reversing strings*"
 text                    .STRINGZ	"FILO"
 fwd                     .STRINGZ	"Forwards: "

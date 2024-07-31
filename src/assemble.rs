@@ -1,5 +1,4 @@
-use crate::binary_utils;
-use crate::binary_utils::flag_set_mask;
+use crate::binary_utils::*;
 use crate::error;
 use crate::error::AsmblrErr;
 use crate::error::FileLoadError;
@@ -12,10 +11,11 @@ use std::io::BufReader;
 use std::thread;
 use std::time;
 
-#[derive(Debug)]
+#[derive(Clone,Debug)]
 pub struct Symbol {
     name: String,
     rel_addr: u16,
+    abs_addr: u16,
     src_ln_number: u16,
     size_in_words: u16,
 }
@@ -86,7 +86,7 @@ impl Token {
         };
 
         match param {
-            Param::Label | Param::Label6bit => return self.is(&Token::Label(String::new())),
+            Param::Label /*| Param::Label6bit*/ => return self.is(&Token::Label(String::new())),
 
             Param::Register(_) => return self.is(&Token::Register(0)),
 
@@ -98,9 +98,9 @@ impl Token {
                 _ => return false,
             },
 
-            Param::Imm5 => {
-                panic!("INTERNAL ERROR: \tUnexpected instr to be defined as having imm5.")
-            }
+            // Param::Imm5 => {
+            //     panic!("INTERNAL ERROR: \tUnexpected instr to be defined as having imm5.")
+            // }
 
             Param::RegisterORImm5 => {
                 return self.is(&Token::Register(0))
@@ -120,7 +120,7 @@ impl Token {
 
             if matches!(number.sign, Sign::MINUS) {
                 //println!("Negative imm5. {num}");
-                result = binary_utils::invert_sign(number.value); /*+ binary_utils::flag_set_mask(5)*/
+                result = invert_sign(number.value); /*+ binary_utils::flag_set_mask(5)*/
             }
 
             truncate_to.map(|limit| {
@@ -131,7 +131,7 @@ impl Token {
                     );
                 }
 
-                return binary_utils::truncate_to_bit(result, limit);
+                return truncate_to_bit(result, limit);
             });
             return result;
         } else {
@@ -209,7 +209,7 @@ impl Token {
                         //continue;
                     }
 
-                    if !c.is_ascii(){
+                    if !c.is_ascii() {
                         return Err(format!("Invalid non-ASCII character '{}' ", c));
                     }
                 }
@@ -301,7 +301,8 @@ impl Token {
                                 if value > 2u32.pow(15) {
                                     return Err(format!(
                                         "Decimal literal {} is out of range. MAX = +/-{}",
-                                        value, 2u32.pow(15)
+                                        value,
+                                        2u32.pow(15)
                                     ));
                                 }
 
@@ -310,7 +311,7 @@ impl Token {
                                     .expect("Unable to convert decimal literal u32 to u16");
 
                                 interpretation.bits =
-                                    binary_utils::bits_required_for_number(interpretation.value);
+                                    bits_required_for_number(interpretation.value);
 
                                 token_stream.push(Self::DecimalLiteral(interpretation));
                                 current_token_text.clear();
@@ -368,7 +369,8 @@ impl Token {
                                 if value > 0xffff {
                                     return Err(format!(
                                         "Hexadecimal literal {:0x} is out of range, MAX +/-0x{:0x}",
-                                        value, 2u32.pow(15)
+                                        value,
+                                        2u32.pow(15)
                                     ));
                                 }
 
@@ -377,7 +379,7 @@ impl Token {
                                     .expect("Unable to convert hexadecimal literal u32 to u16");
 
                                 interpretation.bits =
-                                    binary_utils::bits_required_for_number(interpretation.value);
+                                    bits_required_for_number(interpretation.value);
 
                                 token_stream.push(Self::HexLiteral(interpretation));
                                 current_token_text.clear();
@@ -423,21 +425,20 @@ impl Token {
                                     current_token_text.trim_start_matches('-').to_string();
                                 //println!("'{}'", current_token_text);
                                 // break;
-                                let value: u32 = match u32::from_str_radix(
-                                    &text_to_parse.trim(),
-                                    2,
-                                ) {
+                                let value: u32 = match u32::from_str_radix(&text_to_parse.trim(), 2)
+                                {
                                     Ok(val) => val,
                                     Err(e) => {
                                         return Err(format!(
-                                                "Invalid binary literal 'b{current_token_text}': {e}"
-                                            ));
+                                            "Invalid binary literal 'b{current_token_text}': {e}"
+                                        ));
                                     }
                                 };
                                 if value > 2u32.pow(15) {
                                     return Err(format!(
                                         "Binary literal b{:0b} is out of range, MAX +/-{}",
-                                        value, 2u32.pow(15)
+                                        value,
+                                        2u32.pow(15)
                                     ));
                                 }
 
@@ -446,7 +447,7 @@ impl Token {
                                     .expect("Unable to convert binary literal u32 to u16");
 
                                 interpretation.bits =
-                                    binary_utils::bits_required_for_number(interpretation.value);
+                                    bits_required_for_number(interpretation.value);
 
                                 token_stream.push(Self::HexLiteral(interpretation));
                                 current_token_text.clear();
@@ -456,12 +457,10 @@ impl Token {
                                 }
                             } else {
                                 current_token_text.push(c);
-                                return Err(format!(
-                                    "Invalid binary: 'x{current_token_text}'."
-                                ));
+                                return Err(format!("Invalid binary: 'x{current_token_text}'."));
                             }
                         }
-                        
+
                         Self::Directive(_) => {
                             if !c.is_ascii_alphabetic() {
                                 if c == ',' || c == ' ' || c == '\n' || c == '\t' {
@@ -548,7 +547,7 @@ impl TrapInstruction {
         let mut asm = Assembler::new(format!(".\\src\\asm_files\\trap\\{}.asm", filename).as_str());
         asm.load();
         match asm.tokenize() {
-            Ok (_) => (),
+            Ok(_) => (),
             Err(errors) => {
                 AsmblrErr::display(
                     &format!(".\\src\\asm_files\\trap\\{}.asm", filename),
@@ -620,6 +619,7 @@ pub struct ExecutableImage {
     pub origin: u16,
     pub instructions: Vec<MemoryWrite>,
     pub data: Vec<MemoryWrite>,
+    pub symbol_table: Vec<Symbol>,
 }
 
 impl ExecutableImage {
@@ -629,6 +629,7 @@ impl ExecutableImage {
             origin: 0,
             instructions: Vec::new(),
             data: Vec::new(),
+            symbol_table: Vec::new(),
         }
     }
 }
@@ -716,7 +717,7 @@ impl Assembler {
             Ok(list) => {
                 for (addr, value) in list {
                     img.data.push(MemoryWrite {
-                        rel_addr: addr-self.orig,
+                        rel_addr: addr - self.orig,
                         value,
                     })
                 }
@@ -735,7 +736,7 @@ impl Assembler {
                         value: word,
                     })
                 }
-            },
+            }
             Err(e) => {
                 errors = [errors, e].concat();
             }
@@ -743,6 +744,7 @@ impl Assembler {
         if !errors.is_empty() {
             return Err(errors);
         }
+        img.symbol_table = (self.symbol_table).clone();
 
         Ok(img)
     }
@@ -816,6 +818,7 @@ impl Assembler {
                 self.symbol_table.push(Symbol {
                     name: symbol.clone(),
                     rel_addr: relative_address,
+                    abs_addr: 0,
                     src_ln_number: tk_ln.src_ln_number,
                     size_in_words: 1,
                 });
@@ -951,7 +954,9 @@ impl Assembler {
                         }
                     }
 
-                    Token::DecimalLiteral(val) | Token::HexLiteral(val)| Token::BinLiteral(val) => {
+                    Token::DecimalLiteral(val)
+                    | Token::HexLiteral(val)
+                    | Token::BinLiteral(val) => {
                         if !expecting_origin_value_next && !found_orig {
                             errors.push(AsmblrErr::new(
                                 ln.src_ln_number,
@@ -1143,6 +1148,7 @@ impl Assembler {
             if symbol.size_in_words > 1 {
                 cummulative_offset += symbol.size_in_words - 1;
             }
+            symbol.abs_addr = self.orig + symbol.rel_addr;
         }
         println!("Adjusted symbol table: {:#?}", self.symbol_table);
     }
@@ -1329,7 +1335,10 @@ impl Assembler {
         trap_instructions.map(|x| {
             for trap in x {
                 vm.write_memory(trap.trap_vector, trap.origin);
-                println!("Trap vector: 0x{:x}, value: 0x:{:x} ", trap.trap_vector, trap.origin);
+                println!(
+                    "Trap vector: 0x{:x}, value: 0x:{:x} ",
+                    trap.trap_vector, trap.origin
+                );
                 for (addr, val) in trap.memory_writes {
                     vm.write_memory(addr, val);
                 }
@@ -1340,11 +1349,14 @@ impl Assembler {
         //vm.load_binary_into_memory(instructions, self.orig);
         for w in &img.instructions {
             vm.write_memory(w.rel_addr + img.origin, w.value);
+            println!("{}", Parser::dissasemble_memory(w.value, Some(w.rel_addr + img.origin), None, None));
         }
 
         for w in &img.data {
             //println!("Writing DATA: 0x{:x} <= {:x}", w.rel_addr + img.origin, w.value);
             vm.write_memory(w.rel_addr + img.origin, w.value);
+            println!("{}", Parser::dissasemble_memory(w.value, Some(w.rel_addr + img.origin), None, None));
+
         }
 
         vm.run_io_thread();
@@ -1352,7 +1364,7 @@ impl Assembler {
         loop {
             vm.fetch();
             vm.decode();
-            vm.execute();
+            vm.execute(Some(&img.symbol_table));
 
             if !vm.run {
                 thread::sleep(time::Duration::from_millis(10));
@@ -1491,18 +1503,18 @@ impl Assembler {
                     match &args[k] {
                         Token::DecimalLiteral(val) | Token::HexLiteral(val) => {
                             let mut num: u16 = val.value;
-                            println!("|Imm5|: {num:016b} ({num}))");
+                            // println!("|Imm5|: {num:016b} ({num}))");
                             if num > 2u16.pow(4) {
                                 return Err(format!("Invalid imm5, MAX +/-15"));
                             }
 
                             if matches!(val.sign, Sign::MINUS) {
                                 //println!("Negative imm5. {num}");
-                                num = binary_utils::truncate_to_bit(binary_utils::invert_sign(num), 5) /*+ binary_utils::flag_set_mask(5)*/;
+                                num = truncate_to_bit(invert_sign(num), 5) /*+ flag_set_mask(5)*/;
                             }
                             word += num;
-                            word = binary_utils::set_flag_true(word, 5);
-                            //word += binary_utils::flag_set_mask(5);
+                            word = set_flag_true(word, 5);
+                            //word += flag_set_mask(5);
                         }
                         Token::Register(reg) => {
                             word += reg;
@@ -1516,8 +1528,7 @@ impl Assembler {
                     if let Token::DecimalLiteral(val) | Token::HexLiteral(val) = &args[k] {
                         let mut num: u16 = val.value;
                         if matches!(val.sign, Sign::MINUS) {
-                            num =
-                                binary_utils::truncate_to_bit(binary_utils::invert_sign(num), bits);
+                            num = truncate_to_bit(invert_sign(num), bits);
                         }
 
                         word += num;
@@ -1549,26 +1560,26 @@ impl Assembler {
                             //PC-Offset-9
                             // println!(
                             //     "Label: {symbol_value}, PC: {rel_addr}. L-PC = {}",
-                            //     binary_utils::as_negative_i16(binary_utils::add_2s_complement(
+                            //     as_negative_i16(add_2s_complement(
                             //         symbol_value,
-                            //         binary_utils::invert_sign(rel_addr)
+                            //         invert_sign(rel_addr)
                             //     ))
                             // );
 
-                            let pc_offset_9 = binary_utils::truncate_to_n_bit(binary_utils::add_2s_complement(
+                            let pc_offset_9 = truncate_to_n_bit(add_2s_complement(
                                     symbol_value,
-                                    binary_utils::invert_sign(rel_addr+1),),10) /*<< 7
+                                    invert_sign(rel_addr+1),),10) /*<< 7
                                     >> 7*/
                             ;
                             //WARNING
 
-                            // if binary_utils::is_negative(pc_offset_9){
-                            //     pc_offset_9 = (binary_utils::set_flag_true(pc_offset_9, 8) << 7 ) >> 7;
+                            // if is_negative(pc_offset_9){
+                            //     pc_offset_9 = (set_flag_true(pc_offset_9, 8) << 7 ) >> 7;
                             // }
 
                             // println!(
                             //     "PC-offset 9 = {}",
-                            //     binary_utils::as_negative_i16(pc_offset_9)
+                            //     as_negative_i16(pc_offset_9)
                             // );
                             word += pc_offset_9;
                         }
@@ -1598,7 +1609,7 @@ fn is_instruction(s: &str) -> bool {
 use std::collections::HashMap;
 
 #[derive(Debug)]
-struct InstrDef {
+pub struct InstrDef {
     opcode: u16,
     flags_word: u16,
     params: Vec<Param>,
@@ -1614,7 +1625,7 @@ impl InstrDef {
     }
 }
 
-struct Parser {
+pub struct Parser {
     // lines: Vec<String>,
     // symbolTable: SymbolTable,
     // instruction_set: HashMap<String, InstrDef>,
@@ -1704,23 +1715,29 @@ impl Parser {
                 vec![Param::Label],
             ),
         );
-
         let nzp = flag_set_mask(10) + flag_set_mask(9) + flag_set_mask(11);
+        //Define RET before JMP so dissasem .find defaults to RET when JMP R7 is encountered
+        instr_set.insert(
+            String::from("RET"),
+            InstrDef::new(OP::JMP /*OP::BR */, 0b0000_000_111_000000, vec![]),
+        );
+
+        
         instr_set.insert(
             String::from("JMP"),
             InstrDef::new(OP::JMP, 0, vec![Param::Register(6)]),
         );
 
-        instr_set.insert(
-            String::from("RET"),
-            InstrDef::new(OP::BR, 0b0000_000_111_000000 + nzp, vec![]),
-        );
+
         instr_set.insert(
             String::from("JSR"),
-            InstrDef::new(OP::JSR, binary_utils::flag_set_mask(11), vec![Param::Label]),
+            InstrDef::new(OP::JSR, flag_set_mask(11), vec![Param::Label]),
         );
 
-        instr_set.insert(String::from("JSSR"), InstrDef::new(OP::JSR, 0, vec![Param::Register(6)]));
+        instr_set.insert(
+            String::from("JSSR"),
+            InstrDef::new(OP::JSR, 0, vec![Param::Register(6)]),
+        );
 
         instr_set.insert(
             String::from("LD"),
@@ -1786,6 +1803,95 @@ impl Parser {
 
         instr_set
     }
+
+    pub fn dissasemble_memory(
+        mem: u16,
+        incremented_program_counter: Option<u16>,
+        symbol_table: Option<&SymbolTable>,
+        instr_set: Option<HashMap<String, InstrDef>>,
+    ) -> String {
+
+        let instr_set = match instr_set {
+            None => Self::define_instruction_set(),
+            Some(set) => set,
+        };
+
+        let mut disassem_text = String::new();
+
+        //(1) Resolve opcode
+        let opcode = instructions::get_opcode_16bit(mem);
+        let mut possible_instructions: Vec<(&String, &InstrDef)> = instr_set
+            .iter()
+            .filter(|(name, definition)| (**definition).opcode == opcode)
+            .collect();
+        //println!("Possible instrs: {:#?}", possible_instructions);
+        //(2) resolve variant
+        let (variant_name, variant_definition) = match possible_instructions
+            .iter()
+            .find(|(name, definition)| (mem & definition.flags_word) == definition.flags_word)
+        {
+            None => {
+                println!("[DISASSEM]\tUnable to resolve instruction variant.");
+                return disassem_text;
+            }
+            Some(definition) => definition,
+        };
+
+        disassem_text += &format!("{variant_name}\t");
+        //(3) Parse out arguments according to definition
+        for (param_index, param) in variant_definition.params.iter().enumerate() {
+            use Param::*;
+            match &param {
+                &Bits(n) => {
+                    let number = as_negative_i32(instructions::get_sign_ext_value(mem, *n));
+                    disassem_text += &format!("0x{number:x}");
+                }
+                &Register(starting_at) => {
+                    let reg = instructions::get_register_at(mem, (*starting_at, starting_at + 2));
+                    disassem_text += &format!("R{reg}");
+                }
+                &Label => {
+                    //Pc-offset_9
+                    let pc_offset_9 = instructions::get_sign_ext_value(mem, 9);
+                    //disassem_text += &format!("0x{pc_offset_9:x}");
+
+                    if incremented_program_counter.is_some() && symbol_table.is_some(){
+                        let instr_addr = incremented_program_counter.unwrap();
+                        let symbol_table = symbol_table.unwrap();
+                        match symbol_table.iter().find(|symbol| symbol.abs_addr == add_2s_complement(instr_addr, pc_offset_9)){
+                            Some(symbol) => disassem_text += &format!("[{}]", symbol.name),
+                            None => disassem_text += &format!("[0x{pc_offset_9:x}]"),
+                        }
+
+                    }else{
+                        let pc_offset_9 = as_negative_i32(pc_offset_9);
+                        disassem_text += &format!("0x{pc_offset_9:x}");
+                    }
+                }
+                //Bit 5 tell difference
+                &RegisterORImm5 => {
+                    if flag_is_set(mem, 5) {
+                        //imm 5
+                        let number = as_negative_i32(instructions::get_sign_ext_value(mem, 5));
+                        disassem_text += &format!("#{number}");
+                    } else {
+                        let reg = instructions::get_register_at(mem, (0, 2));
+                        disassem_text += &format!("R{reg}");
+                    }
+                }
+
+                &Imm5 => {
+                    let number = as_negative_i32(instructions::get_sign_ext_value(mem, 5));
+                    disassem_text += &format!("0x{number:x}");
+                }
+            }
+            if param_index + 1 < variant_definition.params.len() {
+                disassem_text += ", ";
+            }
+        }
+
+        disassem_text
+    }
 }
 
 #[derive(Debug)]
@@ -1793,7 +1899,7 @@ pub enum Param {
     Bits(u16),
     Register(u16), /*Lower bit [val -> val+2] */
     Label,
-    Label6bit,
+    //Label6bit,
     RegisterORImm5,
-    Imm5,
+    //Imm5,
 }
