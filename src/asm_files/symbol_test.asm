@@ -6,4 +6,7 @@
         HALT
 ONE     .STRINGZ "ABC"
 TWO     .STRINGZ   "DEF"
+BLOCK   .BLKW 5
+MORE    .FILL #1
+        .FILL #2
         .END

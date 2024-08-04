@@ -73,8 +73,8 @@ L2              LD              R0, ASCII
                 ADD             R2, R2, #1
                 BRnz            L2
 ESC              HALT
-A       .FILL #93
-B       .FILL #117
+A       .FILL #2
+B       .FILL #4
 ANS       .FILL #0
 TOASCII         .FILL #48
 TONUMBER        .FILL #-48
@@ -99,4 +99,5 @@ IS_NUMBER       .FILL	    #-48
 NON_ZERO        .FILL	    #0
 VALUE           .FILL	    #0
 MINUS           .STRINGZ	"-"
+MSG             .STRINGZ  "3x16="
 .END

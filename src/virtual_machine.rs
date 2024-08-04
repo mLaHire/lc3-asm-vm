@@ -1,12 +1,11 @@
 use crate::Term;
 use core::panic;
 use core::time;
-use std::borrow::BorrowMut;
+//use std::borrow::BorrowMut;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread::{self};
-use std::time::Duration;
 
 use crate::binary_utils::{
     self, add_2s_complement, flag_is_set, instructions::*, is_negative, MAX_MEMORY, MAX_MEMORY_SIZE,
@@ -120,6 +119,7 @@ pub struct VirtualMachine {
 
     pub run: bool,
     pub debug_enabled: bool,
+    pub disasm_enabled: bool,
 
     program_counter: u16,
     origin: u16,
@@ -160,6 +160,7 @@ impl VirtualMachine {
 
             run: true,
             debug_enabled: true,
+            disasm_enabled: false,
 
             program_counter: PC_START,
             origin: 0,
@@ -230,7 +231,7 @@ impl VirtualMachine {
             }
         });
 
-        let input_server = thread::spawn(move || {
+        let _input_server = thread::spawn(move || {
             let term = Term::stdout();
             //println!("[IO]\tStarting input server.");
             loop {
@@ -245,11 +246,11 @@ impl VirtualMachine {
                 //     char::from_u32(input_char as u32).unwrap()
                 // );
 
-                let mut attempt_count = 0;
+                //let mut attempt_count = 0;
                 let mut kb_regs = loop {
                     let lock_attempt = kb_registers.try_lock();
                     match lock_attempt {
-                        Err(e) => {
+                        Err(_) => {
                             // if attempt_count > 10 {
                             //     println!("[IO] Waiting for keyboard_register_mutex. {e}");
 
@@ -364,7 +365,7 @@ impl VirtualMachine {
                 let lock_attempt = self.display_reg_mutex.try_lock();
 
                 match lock_attempt {
-                    Err(e) => {
+                    Err(_) => {
                         // attempt_count += 1;
                         // if attempt_count > 10 {
                         //     //println!("[CPU] [READ] Waiting for display_reg_mutex. {e}");
@@ -431,7 +432,7 @@ impl VirtualMachine {
             let mut disp_reg = loop {
                 let lock_attempt = self.display_reg_mutex.try_lock();
                 match lock_attempt {
-                    Err(e) => {
+                    Err(_) => {
                         if attempt_count > 10 {
                             //thread::sleep(time::Duration::from_millis(attempt_count-5));
                             //println!("[CPU] [WRITE] Waiting for display_reg_mutex. {e}");
@@ -487,6 +488,7 @@ impl VirtualMachine {
                 (self.program_counter as i32 - self.origin as i32),
                 /*self.program_counter,*/ self.current_instruction.word
             );
+            
         }
         self.program_counter += 1;
     }
@@ -500,13 +502,35 @@ impl VirtualMachine {
     pub fn execute(&mut self, symbol_table: Option<&crate::assemble::SymbolTable>) {
         //println!("{:?}", self.instruction.opcode);
         let instr = self.current_instruction.word;
-        let disassem = crate::assemble::Parser::dissasemble_memory(
-            instr,
-            Some(self.program_counter),
-            symbol_table,
-            None,
-        );
-        println!("0x{:04x}\t{instr:016b}\t\t{disassem}", self.program_counter-1);
+        if self.disasm_enabled {
+            let disassem = crate::assemble::InstructionSet::dissasemble_memory(
+                instr,
+                Some(self.program_counter),
+                symbol_table,
+                None,
+            );
+            // print!("\t\t\t\t\t\t\t\t");
+            // for i in 0..=7 {
+            //     print!(
+            //         "R{i}\t",
+            //     );
+            // }
+            
+            print!("\t\t\t\t\t\t\t\t\t");
+            for i in 0..=7 {
+                print!(
+                    "\t{:05}",
+                    binary_utils::as_negative_i32(self.read_reg(i))
+                );
+            }
+           
+            println!("");
+            print!(
+                "0x{:04x}\t{instr:016b}\t{disassem}\t",
+                self.program_counter - 1
+            );
+            print!("\n");
+        }
         match self.current_instruction.opcode {
             OP::ADD => self.execute_op_add(instr),
             OP::AND => self.execute_op_and(instr),
@@ -529,11 +553,11 @@ impl VirtualMachine {
         if self.debug_enabled {
             for i in 0..=7 {
                 print!(
-                    "|R{i}: {:05}| ",
+                    "R{i}: #{:05}\t",
                     binary_utils::as_negative_i32(self.read_reg(i))
                 );
             }
-            print!("\n");
+            print!("n");
         }
     }
 

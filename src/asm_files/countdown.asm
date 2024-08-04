@@ -4,4 +4,4 @@ SUB     ADD R0, R0, #-1
         BRp SUB
 EXIT    HALT
 .END
-        CONST .FILL #500
+        CONST .FILL #10

@@ -1,16 +1,18 @@
 use console::Term;
 use std::time::Instant;
-pub mod assemble;
+use crate::assembler::*;
+use assemble::*;
 pub mod binary_utils;
 pub mod error;
 pub mod load_binary;
 pub mod virtual_machine;
+pub mod assembler;
 
 fn main() {
-    let putc_x21 = assemble::TrapInstruction::new("putc", 0x21);
-    let puts_x22 = assemble::TrapInstruction::new("puts", 0x22);
-    let getc_x23 = assemble::TrapInstruction::new("getc", 0x23);
-    let mut term = Term::stdout();
+    let putc_x21 = TrapInstruction::new("putc", 0x21);
+    let puts_x22 = TrapInstruction::new("puts", 0x22);
+    let getc_x23 = TrapInstruction::new("getc", 0x23);
+    let term = Term::stdout();
 
     print!("Enter local file path: .\\src\\asm_files\\");
     let buffer = match term.read_line() {
@@ -22,11 +24,23 @@ fn main() {
 
     let mut path = String::from(".\\src\\asm_files\\");
     path.push_str(&buffer);
-    print!("Debug_enabled? (y/n)");
+    print!("Debug enabled? (y/n)");
 
     
 
     let debug_enabled = match term.read_line() {
+        Ok(p) => p,
+        Err(e) => panic!("{e}"),
+    }
+    .trim()
+    .to_owned()
+    .contains("y");
+
+    print!("Disassembly enabled? (y/n)");
+
+    
+
+    let disasm_enabled = match term.read_line() {
         Ok(p) => p,
         Err(e) => panic!("{e}"),
     }
@@ -66,6 +80,7 @@ fn main() {
         }
     };
     asm.vm.debug_enabled = debug_enabled;
+    asm.vm.disasm_enabled = disasm_enabled;
     let now = Instant::now();
     asm.link_then_execute(&img, Some(vec![putc_x21, puts_x22, getc_x23]));
     let elapsed = now.elapsed();
