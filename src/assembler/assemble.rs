@@ -1,8 +1,9 @@
 use crate::binary_utils::*;
 use crate::error::AsmblrErr;
-use crate::tokenizer::*;
 use crate::error::FileLoadError;
+use crate::tokenizer::*;
 use crate::virtual_machine;
+use crate::load_binary::*;
 use core::panic;
 use io::BufRead;
 use std::fs::File;
@@ -12,18 +13,21 @@ use std::thread;
 use std::time;
 
 #[derive(Clone, Debug)]
-pub struct Symbol {
-    name: String,
-    rel_addr: u16,
-    abs_addr: u16,
-    src_ln_number: u16,
-    size_in_words: u16,
-    is_external: bool,
+pub enum SymbolStatus {
+    Private = 0,
+    Export,
+    Import,
 }
 
-
-
-
+#[derive(Clone, Debug)]
+pub struct Symbol {
+    pub name: String,
+    pub rel_addr: u16,
+    pub abs_addr: u16,
+    pub src_ln_number: u16,
+    pub size_in_words: u16,
+    pub status: SymbolStatus,
+}
 
 pub struct TrapInstruction {
     instructions: Vec<u16>,
@@ -69,11 +73,8 @@ impl TrapInstruction {
                 panic!();
             }
 
-            Ok(_) => {},
-           // Ok(r) => println!("TRAP Program\t.ORIG {:x}\t.END{:x}", r.0, r.1),
+            Ok(_) => {} // Ok(r) => println!("TRAP Program\t.ORIG {:x}\t.END{:x}", r.0, r.1),
         };
-        asm.adjust_symbols();
-        //asm.trim_lines();
         let memory_writes = match asm.parse_directives_to_list() {
             Ok(writes) => writes,
             Err(errors) => {
@@ -85,6 +86,9 @@ impl TrapInstruction {
                 panic!();
             }
         };
+        asm.adjust_symbols();
+        //asm.trim_lines();
+        
         let instructions = match asm.parse_instructions() {
             Ok(writes) => writes,
             Err(errors) => {
@@ -230,6 +234,8 @@ impl Assembler {
             }
         }
         self.adjust_symbols();
+        self.resolve_external_symbols(vec![/*"src\\obj_files\\flib.asm.sym",*/ "src\\obj_files\\stacklib.asm.sym"]);
+
 
         match self.parse_instructions() {
             Ok(instructions) => {
@@ -324,7 +330,7 @@ impl Assembler {
                     abs_addr: 0,
                     src_ln_number: tk_ln.src_ln_number,
                     size_in_words: 1,
-                    is_external: false,
+                    status: SymbolStatus::Private,
                 });
             }
         }
@@ -657,9 +663,32 @@ impl Assembler {
         println!("Adjusted symbol table: {:#?}", self.symbol_table);
     }
 
-    // pub fn resolve_external_symbols(&mut self, symbol_tables: Vec<&Vec<Symbol>>){
-        
-    // }
+    pub fn resolve_external_symbols(&mut self, external_files: Vec<&str>){
+        let symbols_to_resolve: Vec<&mut Symbol> = self.symbol_table.iter_mut().filter(|symbol| matches!(symbol.status,SymbolStatus::Import)).collect();
+        let mut external_tables = Vec::new();
+        for path in external_files{
+            let mut external_table = match read_symbols_from_file(path){
+                Ok(symbols) => symbols,
+                Err(e) => panic!("{e:?}"),
+            };
+            external_tables.append(&mut external_table);
+        }
+
+        for internal in symbols_to_resolve{
+            let resolution = match external_tables.iter().find(|external| matches!(external.status, SymbolStatus::Export) && external.name == internal.name){
+                None => panic!("Unable to resolve import for symbols {}.", internal.name),
+                Some(external) => external.abs_addr,
+            };
+            internal.abs_addr = resolution;
+            if resolution > self.orig{
+                internal.rel_addr = add_2s_complement(resolution, invert_sign(self.orig) );
+            }else{
+                internal.rel_addr = invert_sign(add_2s_complement(invert_sign(resolution), self.orig ));
+            }
+            
+            println!("Resolved {} = 0x{:04x}\t\t == 0x{:x}+0x{:x}", internal.name, internal.abs_addr, self.orig, internal.rel_addr);
+        }
+    }
     pub fn parse_directives_to_list(&mut self) -> Result<Vec<(u16, u16)>, Vec<AsmblrErr>> {
         let mut memory_writes = Vec::new();
         let mut reserved_word_count = 0u16;
@@ -790,15 +819,12 @@ impl Assembler {
                                         }
                                     }
 
-                                    for _ in 0..size_of_block{
-                                        memory_writes
-                                        .push((self.orig + line_offset, 0));
+                                    for _ in 0..size_of_block {
+                                        memory_writes.push((self.orig + line_offset, 0));
                                     }
-                                   
-                                    
 
                                     println!("Reserving {} words", token.as_u16(None));
-                                } else if let Token::Label(text) = token{
+                                } else if let Token::Label(text) = token {
                                     match text.trim().parse::<u16>(){
                                         Ok(size_of_block) => {
                                             if size_of_block > 1 {
@@ -810,9 +836,8 @@ impl Assembler {
                                                 }
                                                 println!("Reserving {} words", text);
                                             }
-                                        }
-                                        
-                                        Err(e) => {
+                                        },
+                                        Err(_) => {
                                             errors.push(AsmblrErr { line_number: tk_ln.src_ln_number, msg: format!("Expected a valid number decimal number after directive .BLKW, found '{text}'")})
                                         }
                                     }
@@ -820,12 +845,28 @@ impl Assembler {
                             }
                             None => println!("BLKW empty."),
                         }
-                    } else if directive == "EXTERNAL"{
+                    } else if directive == "IMPORT" {
                         //skip_count += 1;
+                        for sym in &mut self.symbol_table {
+                            if sym.rel_addr == unadjusted_offset {
+                                sym.status = SymbolStatus::Import;
+                                break;
+                            }
+                        }
+                    } else if directive == "EXPORT" {
+                        //skip_count += 1;
+                        for sym in &mut self.symbol_table {
+                            if sym.rel_addr == unadjusted_offset {
+                                sym.status = SymbolStatus::Export;
+                                break;
+                            }
+                        }
                     }
                 }
 
-                _ => /*skip_count += 1*/{}
+                _ =>
+                    /*skip_count += 1*/
+                    {}
             };
         }
         //memory_writes =  memory_writes.into_iter().map(|w|(w.0-1,w.1)).collect();
@@ -840,6 +881,7 @@ impl Assembler {
     pub fn link_then_execute(
         &mut self,
         img: &ExecutableImage,
+        link_object_files: Option<Vec<&str>>,
         trap_instructions: Option<Vec<TrapInstruction>>,
     ) {
         // let mut instructions: Vec<u16> = match self.parse_instructions() {
@@ -849,6 +891,27 @@ impl Assembler {
         //         return;
         //     }
         // };
+        let vm = &mut self.vm;
+
+        println!("\n\t\t\t\tRUNTIME LINKER");
+        if link_object_files.is_some(){
+            for path in link_object_files.unwrap(){
+                match read_binary_from_file(path, Endian::Little){
+                    Ok(img) => {
+                        let mut origin: u16 = 0;
+                        for (index, val) in img.iter().enumerate() {
+                            if index == 0{
+                                origin = *val;
+                            }else{
+                                vm.write_memory(origin + index as u16 -1, *val);
+                            }
+                        }
+                    },
+                    Err(e) => println!("{e:?}"),
+                }
+            }
+        }
+
 
         //println!("\n Removing leading labels.");
         // for tk_ln in &self.tokenized_lines {
@@ -870,7 +933,7 @@ impl Assembler {
         // let filtered_lines = (&self.tokenized_lines)
         //     .into_iter()
         //     .map(|(line, line_offset)| {line.into_iter().map())});
-        let vm = &mut self.vm;
+        
         self.orig = img.origin;
         vm.set_program_origin(self.orig);
 
@@ -923,7 +986,7 @@ impl Assembler {
             vm.decode();
             vm.execute(Some(&img.symbol_table));
 
-            if !vm.run {
+            if !flag_is_set(vm.read_memory(vm.mcr_address), 15) {
                 thread::sleep(time::Duration::from_millis(10));
                 // print!("Ending VM instance...");
                 // print!("Done.\n");
@@ -940,10 +1003,21 @@ impl Assembler {
 
         //println!("\n Removing leading labels.");
         for tk_ln in &self.tokenized_lines {
-            let line = match tk_ln.tokens.strip_prefix(&[Token::Label(format!(""))]) {
+            let mut line = match tk_ln.tokens.strip_prefix(&[Token::Label(format!(""))]) {
                 Some(without_label) => without_label,
                 None => &tk_ln.tokens,
             };
+
+            if line.starts_with(&[Token::Directive(format!(""))]){
+                println!("Ignoring directive.");
+                line = line.strip_prefix(&[Token::Directive(format!(""))]).unwrap();
+            }
+            //Strip annotating directive .EXPORT
+            // let line = match line.strip_prefix(&[Token::Directive(format!(""))]) {
+            //     Some(without_label) => without_label,
+            //     None => &tk_ln.tokens,
+            // };
+
             //println!("{line_offset} \t {line:?}");
             match self.parse_single_instr(line.to_vec(), tk_ln.rel_addr) {
                 Ok(instr) => match instr {
@@ -1105,7 +1179,7 @@ impl Assembler {
 
                             for sym in &self.symbol_table {
                                 if sym.name.to_ascii_uppercase() == *lbl.to_ascii_uppercase() {
-                                    symbol_value = Some(sym.rel_addr);
+                                    symbol_value = Some(sym.rel_addr /*add_2s_complement(sym.abs_addr, invert_sign(self.orig))*/);
                                 }
                             }
 
@@ -1123,6 +1197,16 @@ impl Assembler {
                             //     ))
                             // );
 
+                            if target_instruction.opcode == (OP::JSR as u16) <<12{
+                                //println!("JSR!");
+                                let pc_offset_11 = truncate_to_n_bit(add_2s_complement(
+                                    symbol_value,
+                                    invert_sign(rel_addr+1),),12);
+
+                                    word += pc_offset_11;
+                                
+                            }else{
+
                             let pc_offset_9 = truncate_to_n_bit(add_2s_complement(
                                     symbol_value,
                                     invert_sign(rel_addr+1),),10) /*<< 7
@@ -1139,12 +1223,12 @@ impl Assembler {
                             //     as_negative_i16(pc_offset_9)
                             // );
                             word += pc_offset_9;
+                            }
                         }
 
                         _ => return Err(format!("Expected label as argument")),
                     }
                 }
-                
             }
         }
 
@@ -1158,7 +1242,8 @@ pub type SymbolTable = Vec<Symbol>;
 pub fn is_instruction(s: &str) -> bool {
     vec![
         "AND", "ADD", "NOT", "BR", "BRZ", "BRP", "BRN", "BRNZ", "BRNZP", "BRNP", "BRZP", "LD",
-        "LDI", "LDR", "ST", "STR", "STI", "TRAP", "JMP", "RET", "JSR", "JSSR", "LEA", "HALT", "IN","OUT", "PUTS",
+        "LDI", "LDR", "ST", "STR", "STI", "TRAP", "JMP", "RET", "JSR", "JSRR", "LEA", "HALT", "IN",
+        "OUT", "PUTS",
     ]
     .contains(&s.to_ascii_uppercase().as_str())
 }
@@ -1174,7 +1259,12 @@ pub struct InstrDef {
 }
 
 impl InstrDef {
-    fn new(opcode: virtual_machine::OP, flags_word: u16, not_flags_word:u16, params: Vec<Param>) -> Self {
+    fn new(
+        opcode: virtual_machine::OP,
+        flags_word: u16,
+        not_flags_word: u16,
+        params: Vec<Param>,
+    ) -> Self {
         InstrDef {
             opcode: (opcode as u16) << 12,
             flags_word,
@@ -1227,24 +1317,24 @@ impl InstructionSet {
 
         instr_set.insert(
             String::from("BRN"),
-            InstrDef::new(OP::BR, flag_set_mask(11),0, vec![Param::Label]),
+            InstrDef::new(OP::BR, flag_set_mask(11), 0, vec![Param::Label]),
         );
 
         instr_set.insert(
             String::from("BRZ"),
-            InstrDef::new(OP::BR, flag_set_mask(10),0, vec![Param::Label]),
+            InstrDef::new(OP::BR, flag_set_mask(10), 0, vec![Param::Label]),
         );
 
         instr_set.insert(
             String::from("BRP"),
-            InstrDef::new(OP::BR, flag_set_mask(9), 0,vec![Param::Label]),
+            InstrDef::new(OP::BR, flag_set_mask(9), 0, vec![Param::Label]),
         );
 
         instr_set.insert(
             String::from("BRNZ"),
             InstrDef::new(
                 OP::BR,
-                flag_set_mask(11) + flag_set_mask(10), 
+                flag_set_mask(11) + flag_set_mask(10),
                 0,
                 vec![Param::Label],
             ),
@@ -1282,7 +1372,7 @@ impl InstructionSet {
 
         instr_set.insert(
             String::from("BR"),
-            InstrDef::new(OP::BR, 0, n+z+p, vec![Param::Label]),
+            InstrDef::new(OP::BR, 0, n + z + p, vec![Param::Label]),
         );
 
         //let nzp = flag_set_mask(10) + flag_set_mask(9) + flag_set_mask(11);
@@ -1294,7 +1384,7 @@ impl InstructionSet {
 
         instr_set.insert(
             String::from("JMP"),
-            InstrDef::new(OP::JMP, 0, 0b0000_000_111_000000,vec![Param::Register(6)]),
+            InstrDef::new(OP::JMP, 0, 0b0000_000_111_000000, vec![Param::Register(6)]),
         );
 
         instr_set.insert(
@@ -1303,8 +1393,8 @@ impl InstructionSet {
         );
 
         instr_set.insert(
-            String::from("JSSR"),
-            InstrDef::new(OP::JSR, 0, flag_set_mask(11),vec![Param::Register(6)]),
+            String::from("JSRR"),
+            InstrDef::new(OP::JSR, 0, flag_set_mask(11), vec![Param::Register(6)]),
         );
 
         instr_set.insert(
@@ -1366,11 +1456,16 @@ impl InstructionSet {
             ),
         );
 
-        
         instr_set.insert(String::from("IN"), InstrDef::new(OP::TRAP, 0x23, 0, vec![]));
-        instr_set.insert(String::from("OUT"), InstrDef::new(OP::TRAP, 0x21, 0, vec![]));
-        instr_set.insert(String::from("PUTS"), InstrDef::new(OP::TRAP, 0x22, 0, vec![])); 
-        instr_set.insert(String::from("HALT"), InstrDef::new(OP::RES, 0, 0, vec![]));
+        instr_set.insert(
+            String::from("OUT"),
+            InstrDef::new(OP::TRAP, 0x21, 0, vec![]),
+        );
+        instr_set.insert(
+            String::from("PUTS"),
+            InstrDef::new(OP::TRAP, 0x22, 0, vec![]),
+        );
+        instr_set.insert(String::from("HALT"), InstrDef::new(OP::TRAP, 0x25, 0, vec![]));
         instr_set.insert(
             String::from("TRAP"),
             InstrDef::new(OP::TRAP, 0, 0, vec![Param::Bits(8)]),
@@ -1401,9 +1496,9 @@ impl InstructionSet {
         //(2) resolve variant
         let (variant_name, variant_definition) =
             match possible_instructions.iter().find(|(_, definition)| {
-                (mem & definition.flags_word) == definition.flags_word 
-                && mem & definition.not_flags_word == 0
-                    /*&& !(definition.flags_word == 0 && ((mem & 0b0000_100_0000_00000) == 0))*/
+                (mem & definition.flags_word) == definition.flags_word
+                    && mem & definition.not_flags_word == 0
+                /*&& !(definition.flags_word == 0 && ((mem & 0b0000_100_0000_00000) == 0))*/
             }) {
                 None => {
                     println!("[DISASSEM]\tUnable to resolve instruction variant.");

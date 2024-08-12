@@ -295,6 +295,29 @@ pub mod test {
 
         assert_eq!(add_2s_complement(0x300, !2 + 1), 0x300 - (2));
     }
+
+    #[test]
+    pub fn instr_interpretation(){
+        assert!(instructions::get_register_at(0b0000_0000_0000_0000, (6, 9)) == 0);
+        assert!(instructions::get_register_at(0b0000_0000_0100_0000, (6, 9)) == 1);
+
+        assert!(instructions::get_opcode_4bit(0b1001_0000_0000_0000) == 0b1001);
+        assert!(instructions::get_sign_ext_value(0b0000_0000_001_01000,5) == 8);
+    }
+
+    #[test]
+    pub fn truncations(){
+        assert!(truncate_to_n_bit(0b0111_1111_1111_1111, 8) == 0b1111_1111);
+        assert!(truncate_to_n_bit(0b1111_1111_1111_1111, 2) == 0b11);
+
+        assert!(truncate_to_bit(0b1111_1111_1111_1111, 9) == 0b1111_1111);
+    }
+
+    #[test]
+    pub fn isolations(){
+        assert_eq!(isolate_bits_then_shift(0b0000_0000_1000_0000, (4, 8)), 0b1000);
+    }
+
 }
 
 //0110

@@ -3,24 +3,25 @@ pub enum FileLoadError {
     FsOpenFailed,
     FsReadFailed,
     InvalidBinary,
+    InvalidSymbols,
 }
 
 #[derive(Clone, Debug)]
-pub struct AsmblrErr{
+pub struct AsmblrErr {
     pub line_number: u16,
     pub msg: String,
 }
 
-impl AsmblrErr{
-    pub fn new(line_number: u16, message: String) -> Self{
-        AsmblrErr{
+impl AsmblrErr {
+    pub fn new(line_number: u16, message: String) -> Self {
+        AsmblrErr {
             line_number,
             msg: message,
         }
     }
 
-    pub fn display(file_path: &str, raw_lines: &Vec<String>, errors: &Vec<Self>){
-        for e in errors{
+    pub fn display(file_path: &str, raw_lines: &Vec<String>, errors: &Vec<Self>) {
+        for e in errors {
             // let msg = &e.msg;
             // let line = e.line_number;
             // let line_text = &raw_lines[e.line_number as usize - 1];
@@ -29,23 +30,23 @@ impl AsmblrErr{
             // eprintln!("    |");
             // eprintln!("{line:4}|\t{line_text}");
             // eprintln!("    |");
-           
-            let source_text = if e.line_number > 0{
-                raw_lines[e.line_number as usize - 1].clone()
-            } else{ 
-                format!("[Unable to resolve source line, invalid line number ({}) ]", e.line_number)
-            };
 
+            let source_text = if e.line_number > 0 {
+                raw_lines[e.line_number as usize - 1].clone()
+            } else {
+                format!(
+                    "[Unable to resolve source line, invalid line number ({}) ]",
+                    e.line_number
+                )
+            };
 
             eprintln!(
                 "\nSyntax error ('{}' (line {})):\n\n{:02}|{}\n\n\t{}",
-                file_path, e.line_number, e.line_number, source_text , e.msg
+                file_path, e.line_number, e.line_number, source_text, e.msg
             );
         }
     }
 }
-
-
 
 #[derive(Debug)]
 pub enum VirtualMachineErrorType {

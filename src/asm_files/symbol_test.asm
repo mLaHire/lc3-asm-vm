@@ -8,5 +8,6 @@ ONE     .STRINGZ "ABC"
 TWO     .STRINGZ   "DEF"
 BLOCK   .BLKW 5
 MORE    .FILL #1
+flib::add_float .IMPORT
         .FILL #2
         .END

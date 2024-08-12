@@ -21,7 +21,7 @@ L2                  LDI     R3, DSR
 Return              LD      R3, SaveR3
                     LD      R1, SaveR1
                     LD      R0, SaveR0
-                    LD      R7, SaveR7
+                    ;LD      R7, SaveR7
                     RET
 ;
 ;   Register locations

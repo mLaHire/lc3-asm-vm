@@ -1,3 +1,4 @@
+use crate::binary_utils::as_negative_i32;
 use crate::Term;
 use core::panic;
 use core::time;
@@ -23,28 +24,21 @@ pub enum ConditionCode {
 
 #[derive(Debug)]
 pub struct Registers {
-    r: [u16; 8],
+    r: [u16; 10],
     condition: ConditionCode,
 }
 
 impl Registers {
     pub fn new() -> Self {
         Registers {
-            r: [0; 8],
+            r: [0; 10],
             condition: ConditionCode::POSITIVE,
         }
     }
     pub fn set(&mut self, n: u16, value: u16) {
         //println!("R{n} <- {value}");
         match n {
-            0 => self.r[0] = value,
-            1 => self.r[1] = value,
-            2 => self.r[2] = value,
-            3 => self.r[3] = value,
-            4 => self.r[4] = value,
-            5 => self.r[5] = value,
-            6 => self.r[6] = value,
-            7 => self.r[7] = value,
+            0..=7 => self.r[n as usize] = value,
             _ => {
                 panic!("Invalid write_register R{n}.")
             }
@@ -53,14 +47,7 @@ impl Registers {
 
     pub fn read(&mut self, n: u16) -> u16 {
         let val = match n {
-            0 => self.r[0],
-            1 => self.r[1],
-            2 => self.r[2],
-            3 => self.r[3],
-            4 => self.r[4],
-            5 => self.r[5],
-            6 => self.r[6],
-            7 => self.r[7],
+            0..=7 => self.r[n as usize],
 
             _ => {
                 panic!("Invalid read_register 'R{n}.'");
@@ -114,6 +101,8 @@ pub struct VirtualMachine {
     pub dsr_address: u16,
     pub ddr_address: u16,
 
+    pub mcr_address: u16,
+
     keyboard_reg_mutex: Arc<Mutex<IORegister>>,
     display_reg_mutex: Arc<Mutex<IORegister>>,
 
@@ -136,7 +125,7 @@ pub struct Instruction {
 
 impl VirtualMachine {
     pub fn new() -> Self {
-        VirtualMachine {
+        let mut vm = VirtualMachine {
             memory: [0; binary_utils::MAX_MEMORY_SIZE],
 
             current_instruction: Instruction {
@@ -149,6 +138,8 @@ impl VirtualMachine {
 
             dsr_address: 0xfe04,
             ddr_address: 0xfe06,
+
+            mcr_address: 0xfffe,
 
             keyboard_reg_mutex: Arc::new(Mutex::new(IORegister { data: 0, signal: 0 })),
             display_reg_mutex: Arc::new(Mutex::new(IORegister {
@@ -166,7 +157,9 @@ impl VirtualMachine {
             origin: 0,
 
             instruction_count: 0,
-        }
+        };
+        vm.write_memory(vm.mcr_address, 0x8000);
+        vm
     }
 
     pub fn set_program_origin(&mut self, pc: u16) {
@@ -367,7 +360,7 @@ impl VirtualMachine {
                 match lock_attempt {
                     Err(_) => {
                         // attempt_count += 1;
-                        // if attempt_count > 10 {
+                         // if attempt_count > 10 {
                         //     //println!("[CPU] [READ] Waiting for display_reg_mutex. {e}");
                         // }
 
@@ -488,7 +481,6 @@ impl VirtualMachine {
                 (self.program_counter as i32 - self.origin as i32),
                 /*self.program_counter,*/ self.current_instruction.word
             );
-            
         }
         self.program_counter += 1;
     }
@@ -515,15 +507,12 @@ impl VirtualMachine {
             //         "R{i}\t",
             //     );
             // }
-            
+
             print!("\t\t\t\t\t\t\t\t\t");
             for i in 0..=7 {
-                print!(
-                    "\t{:05}",
-                    binary_utils::as_negative_i32(self.read_reg(i))
-                );
+                print!("\t0x{:04x}", /*binary_utils::as_negative_i32(*/self.read_reg(i));
             }
-           
+
             println!("");
             print!(
                 "0x{:04x}\t{instr:016b}\t{disassem}\t",
@@ -551,7 +540,7 @@ impl VirtualMachine {
         }
         self.instruction_count += 1;
         if self.debug_enabled {
-            for i in 0..=7 {
+            for i in 0..=9 {
                 print!(
                     "R{i}: #{:05}\t",
                     binary_utils::as_negative_i32(self.read_reg(i))
@@ -723,7 +712,7 @@ impl VirtualMachine {
 
         /*dbg!(self.program_counter + pc_offset_9_ext);
         dbg!(self.read_memory(self.program_counter + pc_offset_9_ext));*/
-        let address = self.program_counter + pc_offset_9_ext;
+        let address = add_2s_complement(self.program_counter, pc_offset_9_ext);
         let value = self.read_memory(address);
         self.set_reg(dest_reg, value);
         self.update_condition(value);
@@ -799,7 +788,7 @@ impl VirtualMachine {
     }
 
     fn execute_op_trap(&mut self, instr: u16) {
-        let trap_vector = binary_utils::truncate_to_n_bit(instr, 8);
+        let trap_vector = binary_utils::truncate_to_n_bit(instr, 9);
         if !trap_vector <= 0xff {
             panic!("TRAP vector 0x{trap_vector:04X} must be <= 0x00FF");
         }
@@ -821,7 +810,8 @@ impl VirtualMachine {
         if flag_is_set(instr, 11) {
             //JSR
             let pcoffset11_sext = get_sign_ext_value(instr, 11);
-            subroutine_addr = pcoffset11_sext + self.program_counter;
+            subroutine_addr = add_2s_complement(pcoffset11_sext, self.program_counter);
+            //println!("pc_offset_11 {} + {} = {subroutine_addr}", as_negative_i32(pcoffset11_sext), self.program_counter)
         } else {
             subroutine_addr = get_register_at(instr, (6, 8));
         }
@@ -868,7 +858,7 @@ impl VirtualMachine {
     }
 
     pub fn read_reg(&mut self, register: u16) -> u16 {
-        if register > 7 {
+        if register > 9{
             panic!("Invalid read_register R{register}.")
         }
         self.registers.read(register)

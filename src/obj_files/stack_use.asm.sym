@@ -1,0 +1,6 @@
+text1               	#0015	x300f		0
+text2               	#0025	x3019		0
+endl                	#0032	x3020		0
+$_pop               	#-233	x2f17		2
+$_push              	#-248	x2f08		2
+$_init_stack        	#-255	x2f01		2

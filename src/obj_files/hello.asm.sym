@@ -1,0 +1,7 @@
+PRINT               	x3002		0
+EXIT                	x3007		0
+A                   	x300d		0
+OUTPUT              	x302d		0
+N                   	x3031		0
+C                   	x3032		0
+LETTER              	x3034		0

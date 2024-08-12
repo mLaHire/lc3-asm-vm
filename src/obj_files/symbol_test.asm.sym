@@ -1,0 +1,5 @@
+ONE                 	0005	x0005		0
+TWO                 	0009	x0009		0
+BLOCK               	0013	x000d		0
+MORE                	0018	x0012		0
+flib::add_float     	0019	x0013		2

@@ -1,0 +1,5 @@
+$float              	#0001	x3061		1
+static_exit         	#0008	x3068		0
+SAVE_R7             	#0009	x3069		0
+msg                 	#0010	x306a		0
+endl                	#0047	x308f		0

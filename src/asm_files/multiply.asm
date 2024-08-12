@@ -73,8 +73,8 @@ L2              LD              R0, ASCII
                 ADD             R2, R2, #1
                 BRnz            L2
 ESC              HALT
-A       .FILL #2
-B       .FILL #4
+A       .FILL #921
+B       .FILL #13
 ANS       .FILL #0
 TOASCII         .FILL #48
 TONUMBER        .FILL #-48
