@@ -8,7 +8,7 @@ underflw_test_passed    LEA         R0, stack_underflow_msg
                         LD          R0, endl
                         TRAP        x21                   
 ; Push value in R0 to stack, set R5 to #1 on overflow
-$_push   .EXPORT        ST          R1, save_r1 ; Save regs used for overflow check
+push!   .EXPORT         ST          R1, save_r1 ; Save regs used for overflow check
                         ST          R2, save_r2
                         ;Check for overflow
                         LD          R2, stack_min_addr
@@ -26,7 +26,7 @@ $_push   .EXPORT        ST          R1, save_r1 ; Save regs used for overflow ch
                         LD          R2, save_r2
                         RET
 ; Pop value from stack to R0; set R5 to #1 if stack is empty
-$_pop   .EXPORT         ST          R2, save_r2
+pop!   .EXPORT          ST          R2, save_r2
                         ST          R1, save_r1
                         ; Check for underflow
                         LD          R2, stack_start_addr

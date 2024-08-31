@@ -84,7 +84,13 @@ fn main() {
     asm.vm.debug_enabled = debug_enabled;
     asm.vm.disasm_enabled = disasm_enabled;
     let now = Instant::now();
-    asm.link_then_execute(&img, Some(vec![/*".\\src\\obj_files\\flib.asm.obj",*/".\\src\\obj_files\\stacklib.asm.obj"]), Some(vec![putc_x21, puts_x22, getc_x23, halt_x25]));
+    asm.link_then_execute(
+        &img,
+        Some(vec![
+            /*".\\src\\obj_files\\flib.asm.obj",*/ ".\\src\\obj_files\\stacklib.asm.obj",
+        ]),
+        Some(vec![putc_x21, puts_x22, getc_x23, halt_x25]),
+    );
     let elapsed = now.elapsed();
     println!(
         "\nExecuted {} instructions in {:?}",
@@ -152,10 +158,12 @@ fn main() {
             Err(e) => panic!("[FAIL]\t{:?}", e),
         };
 
-        let symbols = load_binary::read_symbols_from_file(
-            &format!(".\\src\\obj_files\\{}.sym", buffer),
-        )
-        .expect(&format!("Unable to load symbols from .\\src\\obj_files\\{}.sym", buffer));
+        let symbols =
+            load_binary::read_symbols_from_file(&format!(".\\src\\obj_files\\{}.sym", buffer))
+                .expect(&format!(
+                    "Unable to load symbols from .\\src\\obj_files\\{}.sym",
+                    buffer
+                ));
         println!("\n\nSYMBOL FILE \n{:#?}", symbols);
     } else {
         println!("Skipping..")

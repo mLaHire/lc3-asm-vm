@@ -1,0 +1,3 @@
+ZERO                	#0020	x3014		0
+ENDL                	#0021	x3015		0
+$_init_stack        	#-255	x2f01		2

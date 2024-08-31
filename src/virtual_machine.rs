@@ -360,7 +360,7 @@ impl VirtualMachine {
                 match lock_attempt {
                     Err(_) => {
                         // attempt_count += 1;
-                         // if attempt_count > 10 {
+                        // if attempt_count > 10 {
                         //     //println!("[CPU] [READ] Waiting for display_reg_mutex. {e}");
                         // }
 
@@ -510,7 +510,10 @@ impl VirtualMachine {
 
             print!("\t\t\t\t\t\t\t\t\t");
             for i in 0..=7 {
-                print!("\t0x{:04x}", /*binary_utils::as_negative_i32(*/self.read_reg(i));
+                print!(
+                    "\t0x{:04x}",
+                    /*binary_utils::as_negative_i32(*/ self.read_reg(i)
+                );
             }
 
             println!("");
@@ -535,7 +538,7 @@ impl VirtualMachine {
             OP::LDR => self.execute_op_ldr(instr),
             OP::STR => self.execute_op_str(instr),
             OP::JSR => self.execute_op_jsr(instr),
-            OP::RES => self.run = false,
+            OP::RES => self.execute_op_stack_p(instr),
             _ => panic!("No valid instruction."),
         }
         self.instruction_count += 1;
@@ -762,6 +765,26 @@ impl VirtualMachine {
         self.set_reg(dest_reg, address);
     }
 
+    //PUSH word[11] = 0
+    //POP word[11] = 1
+    // Register specified in [6..=8]
+    fn execute_op_stack_p(&mut self, instr: u16) {
+        let reg = get_register_at(instr, (6, 8));
+        if !flag_is_set(instr, 11) {
+            let new_sp = self.read_reg(6) - 1;
+            let value = self.read_reg(reg);
+
+            self.write_memory(new_sp, value);
+            self.set_reg(6, new_sp);
+        } else {
+            let old_sp = self.read_reg(6);
+            let value = self.read_memory(old_sp);
+
+            self.set_reg(6, old_sp + 1);
+            self.set_reg(reg, value);
+        }
+    }
+
     fn execute_op_ldi(&mut self, instr: u16) {
         let dest_reg = get_register_at(instr, (9, 11));
 
@@ -858,7 +881,7 @@ impl VirtualMachine {
     }
 
     pub fn read_reg(&mut self, register: u16) -> u16 {
-        if register > 9{
+        if register > 9 {
             panic!("Invalid read_register R{register}.")
         }
         self.registers.read(register)

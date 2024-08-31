@@ -66,9 +66,12 @@ impl PartialEq for Token {
 
 impl Token {
     pub fn tokenize_str(line: &str) -> Vec<Token> {
-        match Self::tokenize_line(&SourceLine::new(line, 0, 0)){
+        match Self::tokenize_line(&SourceLine::new(line, 0, 0)) {
             Ok(tokens) => tokens,
-            Err(e) => {println!("ERROR: {e}"); panic!()}
+            Err(e) => {
+                println!("ERROR: {e}");
+                panic!()
+            }
         }
     }
 
@@ -84,80 +87,77 @@ impl Token {
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }
 
-    pub fn is_exact(&self, other: &Self) -> bool{
-        if !self.is(other){
+    pub fn is_exact(&self, other: &Self) -> bool {
+        if !self.is(other) {
             return false;
         }
 
-        match self{
-            Self::DecimalLiteral(this)=> {
-                if let Self::DecimalLiteral(other) = other{
-                    std::mem::discriminant(&this.sign) == std::mem::discriminant(&other.sign)&&
-                    this.value == other.value &&
-                    this.bits == this.bits
-                    
-                }else{
+        match self {
+            Self::DecimalLiteral(this) => {
+                if let Self::DecimalLiteral(other) = other {
+                    std::mem::discriminant(&this.sign) == std::mem::discriminant(&other.sign)
+                        && this.value == other.value
+                        && this.bits == this.bits
+                } else {
                     false
                 }
-            },
-            Self::HexLiteral(this)=> {
-                if let Self::HexLiteral(other) = other{
-                    std::mem::discriminant(&this.sign) == std::mem::discriminant(&other.sign)&&
-                    this.value == other.value &&
-                    this.bits == this.bits
-                    
-                }else{
+            }
+            Self::HexLiteral(this) => {
+                if let Self::HexLiteral(other) = other {
+                    std::mem::discriminant(&this.sign) == std::mem::discriminant(&other.sign)
+                        && this.value == other.value
+                        && this.bits == this.bits
+                } else {
                     false
                 }
-            },
-            Self::BinLiteral(this)=> {
-                if let Self::BinLiteral(other) = other{
-                    std::mem::discriminant(&this.sign) == std::mem::discriminant(&other.sign)&&
-                    this.value == other.value &&
-                    this.bits == this.bits
-                    
-                }else{
+            }
+            Self::BinLiteral(this) => {
+                if let Self::BinLiteral(other) = other {
+                    std::mem::discriminant(&this.sign) == std::mem::discriminant(&other.sign)
+                        && this.value == other.value
+                        && this.bits == this.bits
+                } else {
                     false
                 }
-            },
-            Self::StringLiteral(this)=> {
-                if let Self::StringLiteral(other) = other{
+            }
+            Self::StringLiteral(this) => {
+                if let Self::StringLiteral(other) = other {
                     this.eq(other)
-                }else{
+                } else {
                     false
                 }
-            },
-            Self::Label(this)=> {
-                if let Self::Label(other) = other{
+            }
+            Self::Label(this) => {
+                if let Self::Label(other) = other {
                     this.eq(other)
-                }else{
+                } else {
                     false
                 }
-            },
-            Self::Directive(this)=> {
-                if let Self::Directive(other) = other{
+            }
+            Self::Directive(this) => {
+                if let Self::Directive(other) = other {
                     this.eq(other)
-                }else{
+                } else {
                     false
                 }
-            },
-            Self::Register(this)=> {
-                if let Self::Register(other) = other{
+            }
+            Self::Register(this) => {
+                if let Self::Register(other) = other {
                     this == other
-                }else{
+                } else {
                     false
                 }
-            },
-            Self::Instruction(this)=> {
-                if let Self::Instruction(other) = other{
+            }
+            Self::Instruction(this) => {
+                if let Self::Instruction(other) = other {
                     this == other
-                }else{
+                } else {
                     false
                 }
-            },
+            }
             Self::Comma => {
-                matches!(Self::Comma,other)
-            },
+                matches!(Self::Comma, other)
+            }
             _ => false,
         }
     }
@@ -173,7 +173,7 @@ impl Token {
         match param {
             Param::Label /*| Param::Label6bit*/ => return self.is(&Token::Label(String::new())),
 
-            Param::Register(_) => return self.is(&Token::Register(0)),
+            Param::Register(_) | Param::RegisterMultiMapped(_, _)=> return self.is(&Token::Register(0)),
 
             Param::Bits(bits) => match self {
                 Self::DecimalLiteral(number) | Self::HexLiteral(number) => {
@@ -424,9 +424,12 @@ impl Token {
                             if !c.is_ascii_hexdigit()
                                 && current_token_text.len() != 0
                                 && (c != '-')
-                                && c != '\n' && c != '\t'
+                                && c != '\n'
+                                && c != '\t'
                             {
-                                return Err(format!("Invalid hexdecimal literal '{current_token_text}'."));
+                                return Err(format!(
+                                    "Invalid hexdecimal literal '{current_token_text}'."
+                                ));
                             } else {
                                 if c == '-' {
                                     if current_token_text.starts_with("-") {
@@ -621,23 +624,31 @@ impl Token {
 }
 
 #[cfg(test)]
-mod test{
+mod test {
     use super::*;
 
     #[test]
-    pub fn individual_tokens(){
+    pub fn individual_tokens() {
         expect_tokens("LABEL", vec![Token::Label(String::from("LABEL"))]);
         //expect_tokens("xF1", vec![Token::HexLiteral(NumberLiteral { sign: Sign::PLUS, value: 0xf1, bits: bits_required_for_number(0xf1) })]);
         //expect_tokens("x-F1", vec![Token::HexLiteral(NumberLiteral { sign: Sign::MINUS, value: 0xf1, bits: bits_required_for_number(!(0xf1) + 1) })]);
-        expect_tokens("\"An example string...\" ", vec![Token::StringLiteral(String::from("An example string..."))]);
+        expect_tokens(
+            "\"An example string...\" ",
+            vec![Token::StringLiteral(String::from("An example string..."))],
+        );
     }
 
     #[test]
-    pub fn numbers_pass(){
+    pub fn numbers_pass() {
         expect_hex_literal("xF1", Sign::PLUS, 0xf1, bits_required_for_number(0xf1));
-        expect_hex_literal("x-F1", Sign::MINUS, 0xf1, bits_required_for_number(1+ !0xf1));
+        expect_hex_literal(
+            "x-F1",
+            Sign::MINUS,
+            0xf1,
+            bits_required_for_number(1 + !0xf1),
+        );
 
-        //N.B. 
+        //N.B.
         println!("N.B.\tBinLiterals become HexLiterals");
         expect_hex_literal("b1000", Sign::PLUS, 8, 4);
         expect_hex_literal("b0", Sign::PLUS, 0, 0);
@@ -647,7 +658,7 @@ mod test{
     }
 
     #[test]
-    pub fn numbers_fail(){
+    pub fn numbers_fail() {
         expect_err("#5FF");
         expect_err("b22");
         expect_err("#--1");
@@ -659,7 +670,7 @@ mod test{
     }
 
     #[test]
-    pub fn directives_pass(){
+    pub fn directives_pass() {
         expect_directive(".ORIG", "ORIG");
         expect_directive(".END", "END");
         expect_directive(".FILL", "FILL");
@@ -670,7 +681,7 @@ mod test{
     }
 
     #[test]
-    pub fn directives_fail(){
+    pub fn directives_fail() {
         expect_err(".");
         expect_err(".F1LL");
         expect_err(".,");
@@ -679,27 +690,51 @@ mod test{
     }
 
     #[test]
-    pub fn tokenize_stream_pass(){
-        expect_tokens("ADD R0, R1, #5", vec![Token::Instruction(String::from("ADD")), Token::Register(0), Token::Comma, Token::Register(1), Token::Comma, Token::DecimalLiteral(NumberLiteral { sign: Sign::PLUS, value: 5, bits: 3 })]);
-        expect_tokens("$f .EXPORT LDI R0, ADDR", vec![Token::Label(String::from("$f")), Token::Directive(String::from("EXPORT")), Token::Instruction(String::from("LDI")), Token::Register(0), Token::Comma, Token::Label(String::from("ADDR"))]);
+    pub fn tokenize_stream_pass() {
+        expect_tokens(
+            "ADD R0, R1, #5",
+            vec![
+                Token::Instruction(String::from("ADD")),
+                Token::Register(0),
+                Token::Comma,
+                Token::Register(1),
+                Token::Comma,
+                Token::DecimalLiteral(NumberLiteral {
+                    sign: Sign::PLUS,
+                    value: 5,
+                    bits: 3,
+                }),
+            ],
+        );
+        expect_tokens(
+            "$f .EXPORT LDI R0, ADDR",
+            vec![
+                Token::Label(String::from("$f")),
+                Token::Directive(String::from("EXPORT")),
+                Token::Instruction(String::from("LDI")),
+                Token::Register(0),
+                Token::Comma,
+                Token::Label(String::from("ADDR")),
+            ],
+        );
     }
 
     #[test]
-    pub fn tokenize_stream_fail(){
+    pub fn tokenize_stream_fail() {
         expect_err("message .STRINGZ \"abcdefg");
         expect_err("ADD R9, R0, #5");
         expect_err("ADD x #");
     }
 
-    fn expect_tokens(string: &str, expected: Vec<Token>){
+    fn expect_tokens(string: &str, expected: Vec<Token>) {
         //let mut line = SourceLine::new("ADD R0, R1, #5", 0, 1);
         let actual = Token::tokenize_str(string);
         assert_eq!(actual.len(), expected.len());
 
         let mut actual = actual.into_iter();
         let mut expected = expected.into_iter();
-        while let Some(token) = actual.next(){
-            let exp = match expected.next(){
+        while let Some(token) = actual.next() {
+            let exp = match expected.next() {
                 Some(exp) => exp,
                 None => {
                     println!("Unexpected error.");
@@ -711,27 +746,32 @@ mod test{
         }
     }
 
-    fn expect_hex_literal(str: &str, sign: Sign, value: u16, bits: u16){
-        expect_tokens(str, vec![Token::HexLiteral(NumberLiteral { sign, value, bits})]);
+    fn expect_hex_literal(str: &str, sign: Sign, value: u16, bits: u16) {
+        expect_tokens(
+            str,
+            vec![Token::HexLiteral(NumberLiteral { sign, value, bits })],
+        );
     }
-    fn expect_dec_literal(str: &str, sign: Sign, value: u16, bits: u16){
-        expect_tokens(str, vec![Token::DecimalLiteral(NumberLiteral { sign, value, bits})]);
+    fn expect_dec_literal(str: &str, sign: Sign, value: u16, bits: u16) {
+        expect_tokens(
+            str,
+            vec![Token::DecimalLiteral(NumberLiteral { sign, value, bits })],
+        );
     }
 
-    fn expect_label(str: &str, label: &str){
+    fn expect_label(str: &str, label: &str) {
         expect_tokens(str, vec![Token::Label(String::from(str))]);
     }
 
-    fn expect_directive(str: &str, directive: &str){
+    fn expect_directive(str: &str, directive: &str) {
         expect_tokens(str, vec![Token::Directive(String::from(directive))]);
     }
-
 
     // pub fn expect_bin_literal(str: &str, sign: Sign, value: u16, bits: u16){
     //     expect_tokens(str, vec![Token::BinLiteral(NumberLiteral { sign, value, bits})]);
     // }
 
-    fn expect_err(string: &str){
+    fn expect_err(string: &str) {
         assert!(Token::tokenize_str_w_err(string).is_err())
     }
 }
