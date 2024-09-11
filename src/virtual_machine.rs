@@ -1,5 +1,5 @@
 use crate::binary_utils::as_negative_i32;
-use crate::Term;
+use console::Term;
 use core::panic;
 use core::time;
 //use std::borrow::BorrowMut;

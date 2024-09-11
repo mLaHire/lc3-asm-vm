@@ -14,12 +14,33 @@ pub mod virtual_machine;
 //
 //fn compile(source_file: &Path, external_symbol_files: Vec<&Path>) {}
 
+
+enum CliRequestType{
+    Assemble, 
+    LinkLoad,
+    Flag(String),
+}
+
+struct CliRequest{
+    
+}
+
+
+
+
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    print!("Arguments: {args:?}");
+    //return;
+    
     let putc_x21 = TrapInstruction::new("putc", 0x21);
     let puts_x22 = TrapInstruction::new("puts", 0x22);
     let getc_x23 = TrapInstruction::new("getc", 0x23);
     let halt_x25 = TrapInstruction::new("halt", 0x25);
     let term = Term::stdout();
+
+    
 
     print!("Enter local file path: .\\src\\asm_files\\");
     let buffer = match term.read_line() {
@@ -53,31 +74,13 @@ fn main() {
 
     let mut asm = assemble::Assembler::new(&path);
     asm.load();
-    // asm.tokenize();
-    // match asm.parse_origin_and_end() {
-    //     Err(errors) => {
-    //         error::AsmblrErr::display(&path, &asm.raw_lines, &errors);
-    //         return;
-    //     }
-    //     Ok(r) => println!("[ASM] Program\t.ORIG {:x}\t.END{:x}", r.0, r.1),
-    // }
-    // match asm.load_symbols() {
-    //     Ok(_) => (),
-    //     Err(errors) => {
-    //         error::AsmblrErr::display(&path, &asm.raw_lines, &errors);
-    //         return;
-    //     }
 
-    // }
-
-    // asm.parse_directives();
-    // asm.adjust_symbols();
     let img = match asm.assemble() {
         Ok(img) => img,
         Err(errors) => {
             error::AsmblrErr::display(&path, &asm.raw_lines, &errors);
 
-            println!("\n[ASM]\tAssembly failed, {} error(s).", errors.len());
+            eprintln!("\n[ASM]\tAssembly failed, {} error(s).", errors.len());
             return;
         }
     };

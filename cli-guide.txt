@@ -1,0 +1,8 @@
+
+
+type GReg <16, 8>
+
+
+op ADD <<width: 16, code: 0x1, flags: [5]>>  (dr: Reg[9:11], sr1: Reg[6:8], sr2: Reg[0:2]){ 
+
+}
