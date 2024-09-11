@@ -1,1 +1,0 @@
-C:\Users\Admin\PROJECTS\RUST\LC-3\target\debug\LC-3.exe: C:\Users\Admin\PROJECTS\RUST\LC-3\src\binary_utils.rs C:\Users\Admin\PROJECTS\RUST\LC-3\src\main.rs C:\Users\Admin\PROJECTS\RUST\LC-3\src\virtual_machine.rs
