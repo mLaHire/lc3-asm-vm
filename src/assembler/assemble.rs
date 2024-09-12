@@ -38,13 +38,13 @@ pub struct TrapInstruction {
 
 impl TrapInstruction {
     pub fn new(filename: &str, trap_vector: u16) -> Self {
-        let mut asm = Assembler::new(format!(".\\src\\asm_files\\trap\\{}.asm", filename).as_str());
+        let mut asm = Assembler::new(format!("./src/asm_files/trap/{}.asm", filename).as_str());
         asm.load();
         match asm.tokenize() {
             Ok(_) => (),
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!(".\\src\\asm_files\\trap\\{}.asm", filename),
+                    &format!("./src/asm_files/trap/{}.asm", filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -54,7 +54,7 @@ impl TrapInstruction {
         match asm.parse_origin_and_end() {
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!(".\\src\\asm_files\\trap\\{}.asm", filename),
+                    &format!("./src/asm_files/trap/{}.asm", filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -66,7 +66,7 @@ impl TrapInstruction {
         match asm.load_symbols() {
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!(".\\src\\asm_files\\trap\\{}.asm", filename),
+                    &format!("./src/asm_files/trap/{}.asm", filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -79,7 +79,7 @@ impl TrapInstruction {
             Ok(writes) => writes,
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!(".\\src\\asm_files\\trap\\{}.asm", filename),
+                    &format!("./src/asm_files/trap/{}.asm", filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -93,7 +93,7 @@ impl TrapInstruction {
             Ok(writes) => writes,
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!(".\\src\\asm_files\\trap\\{}.asm", filename),
+                    &format!("./src/asm_files/trap/{}.asm", filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -175,8 +175,9 @@ impl Assembler {
         let file = match file_open_result {
             Ok(f) => f,
             Err(e) => {
-                dbg!(e);
-                panic!("{:?}", FileLoadError::FsOpenFailed);
+                //dbg!(e);
+                eprintln!("[ASM]\tFATAL ERROR: Could not open file '{}'.\n", self.file_path);
+                panic!("{:?}", e);
             }
         };
 
@@ -235,7 +236,7 @@ impl Assembler {
         }
         self.adjust_symbols();
         self.resolve_external_symbols(vec![
-            /*"src\\obj_files\\flib.asm.sym",*/ "src\\obj_files\\stacklib.asm.sym",
+            /*"src/obj_files/flib.asm.sym",*/ "src/obj_files/stacklib.asm.sym",
         ]);
 
         match self.parse_instructions() {
@@ -676,7 +677,7 @@ impl Assembler {
                                         0,
                                     ));
                                     println!(
-                                        "\t'\\0' --> 0x{:04x}\n",
+                                        "\t'/0' --> 0x{:04x}\n",
                                         self.orig + line_offset + (text.bytes().len() as u16)
                                     );
                                     reserved_word_count += text.bytes().len() as u16;
@@ -882,9 +883,19 @@ impl Assembler {
             vm.execute(Some(&img.symbol_table));
 
             if !flag_is_set(vm.read_memory(vm.mcr_address), 15) {
+               
                 thread::sleep(time::Duration::from_millis(10));
-                // print!("Ending VM instance...");
-                // print!("Done.\n");
+                print!("Ending VM instance... ");
+                vm.write_memory(vm.kbsr_address, set_flag_true(0, 14));
+                vm.write_memory(vm.dsr_address, set_flag_true(0, 14));
+                while flag_is_set(vm.read_memory(vm.kbsr_address), 14) || flag_is_set(vm.read_memory(vm.dsr_address), 14){
+                    //wait for Input server to terminate.
+                    print!("Waiting for I/O servers to terminate... \n");
+                    thread::sleep(time::Duration::from_millis(100));
+                    
+                }
+               
+                print!("Done.\n");
 
                 break;
             }

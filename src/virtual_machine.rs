@@ -219,6 +219,17 @@ impl VirtualMachine {
                         }
                     }
                 }
+
+                if binary_utils::flag_is_set((*display).signal, 14){
+                    //Kill signal
+                    println!("Ending output server...");
+                    
+
+                    drop(term);
+                    //println!("Ending output server...");
+                    (*display).signal = binary_utils::set_flag_false((*display).signal, 14);
+                    break;
+                }
                 drop(display);
                 thread::sleep(time::Duration::from_millis(1));
             }
@@ -226,18 +237,19 @@ impl VirtualMachine {
 
         let _input_server = thread::spawn(move || {
             let term = Term::stdout();
+            let mut kill_signal = false;
             //println!("[IO]\tStarting input server.");
             loop {
+                
+                // println!(
+                //     "INPUT: '{}' (ASCII {input_char})",
+                //     char::from_u32(input_char as u32).unwrap()
+                // );
                 let input_char: u16 = term
                     .read_char()
                     .expect("Failure to read input char.")
                     .try_into()
                     .expect("msg");
-
-                // println!(
-                //     "INPUT: '{}' (ASCII {input_char})",
-                //     char::from_u32(input_char as u32).unwrap()
-                // );
 
                 //let mut attempt_count = 0;
                 let mut kb_regs = loop {
@@ -259,6 +271,19 @@ impl VirtualMachine {
                     }
                 };
 
+                if binary_utils::flag_is_set((*kb_regs).signal, 14){
+                    //Kill signal
+                    term.write_line("Ending input server...").unwrap();
+                    kill_signal = true;
+                   
+                   // drop(term);
+                    //println!("Ending output server...");
+                   // (*kb_regs).signal = binary_utils::set_flag_false((*kb_regs).signal, 14);
+                    
+                }
+
+                
+
                 if !binary_utils::flag_is_set((*kb_regs).signal, 15) {
                     //println!("[IO]\tChar input recived. KBSR is clear. Updating KBSR and KBDR");
                     (*kb_regs).signal = binary_utils::set_flag_true(0, 15);
@@ -266,11 +291,16 @@ impl VirtualMachine {
                 } else {
                     //println!("[IO]\tChar input recived. KBSR is NOT clear. Ignoring input.");
                 }
+
+                
                 drop(kb_regs);
                 //println!("[IO] Dropped kb_regs.");
                 thread::sleep(time::Duration::from_millis(2));
             }
         });
+
+        self.write_memory(self.ddr_address, 0);
+        self.write_memory(self.dsr_address, 0);
     }
 
     pub fn load_binary_into_memory(&mut self, binary: Vec<u16>, program_start_addr: u16) {
@@ -417,7 +447,7 @@ impl VirtualMachine {
                 .keyboard_reg_mutex
                 .try_lock()
                 .expect("[CPU][WRITE MEM]\tUnable to lock kb_reg.");
-            (*kb_reg).data = value;
+            (*kb_reg).signal = value;
         }
 
         if address == self.ddr_address {

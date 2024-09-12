@@ -42,7 +42,7 @@ fn main() {
 
     
 
-    print!("Enter local file path: .\\src\\asm_files\\");
+    print!("Enter local file path: ./src/asm_files/");
     let buffer = match term.read_line() {
         Ok(p) => p,
         Err(e) => panic!("{e}"),
@@ -50,7 +50,7 @@ fn main() {
     .trim()
     .to_owned();
 
-    let mut path = String::from(".\\src\\asm_files\\");
+    let mut path = String::from("./src/asm_files/");
     path.push_str(&buffer);
     print!("Debug enabled? (y/n)");
 
@@ -90,7 +90,7 @@ fn main() {
     asm.link_then_execute(
         &img,
         Some(vec![
-            /*".\\src\\obj_files\\flib.asm.obj",*/ ".\\src\\obj_files\\stacklib.asm.obj",
+            /*"./src/obj_files/flib.asm.obj",*/ "./src/obj_files/stacklib.asm.obj",
         ]),
         Some(vec![putc_x21, puts_x22, getc_x23, halt_x25]),
     );
@@ -112,18 +112,18 @@ fn main() {
 
     if output {
         let _ = match load_binary::write_binary_to_file(
-            &format!(".\\src\\obj_files\\{}.obj", buffer),
+            &format!("./src/obj_files/{}.obj", buffer),
             &img,
         ) {
             Ok(size) => println!(
-                "[OK]\tWrote {size} bytes to.\\src\\obj_files\\{}.obj ",
+                "[OK]\tWrote {size} bytes to./src/obj_files/{}.obj ",
                 buffer
             ),
             Err(e) => panic!("[FAIL]\t{:?}", e),
         };
 
         let obj = load_binary::read_binary_from_file(
-            &format!(".\\src\\obj_files\\{}.obj", buffer),
+            &format!("./src/obj_files/{}.obj", buffer),
             load_binary::Endian::Little,
         )
         .expect("Unable to open multiply.obj");
@@ -151,20 +151,20 @@ fn main() {
 
     if output {
         let _ = match load_binary::write_symbols_to_file(
-            &format!(".\\src\\obj_files\\{}.sym", buffer),
+            &format!("./src/obj_files/{}.sym", buffer),
             &img,
         ) {
             Ok(size) => println!(
-                "[OK]\tWrote {size} symbols to.\\src\\obj_files\\{}.obj ",
+                "[OK]\tWrote {size} symbols to./src/obj_files/{}.obj ",
                 buffer
             ),
             Err(e) => panic!("[FAIL]\t{:?}", e),
         };
 
         let symbols =
-            load_binary::read_symbols_from_file(&format!(".\\src\\obj_files\\{}.sym", buffer))
+            load_binary::read_symbols_from_file(&format!("./src/obj_files/{}.sym", buffer))
                 .expect(&format!(
-                    "Unable to load symbols from .\\src\\obj_files\\{}.sym",
+                    "Unable to load symbols from ./src/obj_files/{}.sym",
                     buffer
                 ));
         println!("\n\nSYMBOL FILE \n{:#?}", symbols);
