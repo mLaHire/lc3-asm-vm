@@ -60,7 +60,7 @@ pub fn assemble(src_file: String, output_file: String, asm_flags: String) {
         &format!("{}", output_file),
         &img,
     ) {
-        Ok(size) => println!("[OK]\tWrote {size} bytes to. {}", output_file),
+        Ok(size) => println!("[OK]\tWrote {size} bytes to {}", output_file),
         Err(e) => panic!("[FAIL]\t{:?}", e),
     };
 }
