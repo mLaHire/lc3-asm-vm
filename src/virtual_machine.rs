@@ -273,8 +273,10 @@ impl VirtualMachine {
                     //Kill signal
                     term.write_line("Ending input server...").unwrap();
                     kill_signal = true;
-
-                    // drop(term);
+                    
+                    drop(term);
+                    (*kb_regs).signal = binary_utils::set_flag_false((*kb_regs).signal, 14);
+                    return;
                     //println!("Ending output server...");
                     // (*kb_regs).signal = binary_utils::set_flag_false((*kb_regs).signal, 14);
                 }

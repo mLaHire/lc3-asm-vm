@@ -26,12 +26,16 @@ struct CliRequest {}
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     print!("\nArguments: {args:?}\n");
+    if args[1] == "--old"{
+        main_obsolete();
+        return;
+    }
     parse_arguments(args);
 }
 
 fn main_obsolete() {
-    let args: Vec<String> = std::env::args().collect();
-    print!("Arguments: {args:?}");
+   // let args: Vec<String> = std::env::args().collect();
+    //print!("Arguments: {args:?}");
     //return;
 
     let putc_x21 = TrapInstruction::new("putc", 0x21);
@@ -73,7 +77,7 @@ fn main_obsolete() {
     let mut asm = assemble::Assembler::new(&path);
     asm.load();
 
-    let img = match asm.assemble() {
+    let img = match asm.assemble(vec![]) {
         Ok(img) => img,
         Err(errors) => {
             error::AsmblrErr::display(&path, &asm.raw_lines, &errors);

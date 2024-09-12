@@ -120,6 +120,8 @@ pub fn write_symbols_to_file(
     };
     let mut symbol_count = 0;
     //file.write(format!(";{:20}\t{:4}\t\t{}\n", "Name","Addr","Status").as_bytes());
+
+    //file.write(".SYM".as_bytes()).expect("Error writing header.");
     for symbol in &img.symbol_table {
         file.write(
             format!(
@@ -161,7 +163,7 @@ pub fn read_symbols_from_file(path: &str) -> Result<Vec<assemble::Symbol>, error
 
     let contents = contents.lines();
     for line in contents.into_iter() {
-        println!("{line}");
+        //println!("{line}");
         let mut tokens = Token::tokenize_str(line);
         //println!("{tokens:?}");
         if tokens.len() != 4 {

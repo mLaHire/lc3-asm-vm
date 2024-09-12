@@ -209,7 +209,7 @@ impl Assembler {
         //println!("Symbol table: {:#?}", self.symbol_table);
     }
 
-    pub fn assemble(&mut self) -> Result<ExecutableImage, Vec<AsmblrErr>> {
+    pub fn assemble(&mut self, external_files: Vec<&str>) -> Result<ExecutableImage, Vec<AsmblrErr>> {
         let mut errors = Vec::new();
         let mut img = ExecutableImage::new(self.file_path.clone());
 
@@ -252,10 +252,8 @@ impl Assembler {
             }
         }
         self.adjust_symbols();
-        //    self.resolve_external_symbols(vec![
-        //         /*"src/obj_files/flib.asm.sym",*/ "src/obj_files/stacklib.asm.sym",
-        //     ]);
-        eprintln!("[ASM] WARNING: not resolving external symbols.");
+        self.resolve_external_symbols(external_files);
+        //eprintln!("[ASM] WARNING: not resolving external symbols.");
 
         match self.parse_instructions() {
             Ok(instructions) => {
@@ -274,6 +272,8 @@ impl Assembler {
             return Err(errors);
         }
         img.symbol_table = (self.symbol_table).clone();
+
+        println!("[ASM] Assembled {}.", self.file_path);
 
         Ok(img)
     }
@@ -578,6 +578,9 @@ impl Assembler {
     }
 
     pub fn resolve_external_symbols(&mut self, external_files: Vec<&str>) {
+        if self.verbose_log{
+            println!("Resolving symbols from external files: {:?}", external_files);
+        }
         let symbols_to_resolve: Vec<&mut Symbol> = self
             .symbol_table
             .iter_mut()
@@ -607,10 +610,14 @@ impl Assembler {
                     invert_sign(add_2s_complement(invert_sign(resolution), self.orig));
             }
 
-            println!(
-                "Resolved {} = 0x{:04x}\t\t == 0x{:x}+0x{:x}",
-                internal.name, internal.abs_addr, self.orig, internal.rel_addr
-            );
+            if self.verbose_log{
+                println!(
+                    "Resolved {} = 0x{:04x}\t\t == 0x{:x}+0x{:x}",
+                    internal.name, internal.abs_addr, self.orig, internal.rel_addr
+                );
+            }
+
+            
         }
     }
     pub fn parse_directives_to_list(&mut self) -> Result<Vec<(u16, u16)>, Vec<AsmblrErr>> {
@@ -824,6 +831,7 @@ impl Assembler {
         //         return;
         //     }
         // };
+        todo!("Separate out functionality.");
         let vm = &mut self.vm;
 
         println!("\n\t\t\t\tRUNTIME LINKER");
@@ -923,12 +931,13 @@ impl Assembler {
                 print!("Ending VM instance... ");
                 vm.write_memory(vm.kbsr_address, set_flag_true(0, 14));
                 vm.write_memory(vm.dsr_address, set_flag_true(0, 14));
+                print!("Press any key to exit...");
                 while flag_is_set(vm.read_memory(vm.kbsr_address), 14)
                     || flag_is_set(vm.read_memory(vm.dsr_address), 14)
                 {
                     //wait for Input server to terminate.
-                    print!("Waiting for I/O servers to terminate... \n");
-                    thread::sleep(time::Duration::from_millis(100));
+                    
+                    thread::sleep(time::Duration::from_millis(10));
                 }
 
                 print!("Done.\n");
