@@ -8,6 +8,37 @@ use std::process::Output;
 use assemble::*;
 use assembler::*;
 
+pub struct AssemblerFlags {
+    pub case_insensitive_labels: bool,
+    pub output_symbol_file: bool,
+    pub verbose_log: bool,
+}
+
+impl AssemblerFlags {
+    pub fn new() -> Self {
+        AssemblerFlags {
+            case_insensitive_labels: true,
+            output_symbol_file: true,
+            verbose_log: false,
+        }
+    }
+
+    pub fn case_sensitive_labels(&mut self) -> &mut Self {
+        self.case_insensitive_labels = false;
+        self
+    }
+
+    pub fn set_symbol_file(&mut self, flag: bool) -> &mut Self {
+        self.output_symbol_file = flag;
+        self
+    }
+
+    pub fn set_verbose_log(&mut self, flag: bool) -> &mut Self {
+        self.verbose_log = flag;
+        self
+    }
+}
+
 pub fn parse_arguments(args: Vec<String>) {
     if args.len() < 3 {
         panic!("Too few arguments");
@@ -21,9 +52,23 @@ pub fn parse_arguments(args: Vec<String>) {
 
             let src_file0 = src_files[0].clone(); //Guaranteed to exist
 
+            let mut flags = AssemblerFlags::new();
+
             if args.len() > 3 {
-                for arg in 3..args.len() {
-                    //process flags
+                for arg_no in 3..args.len() {
+                    match args[arg_no].as_str() {
+                        "--case-sensitive" => {
+                            flags.case_sensitive_labels();
+                        }
+                        "--no-sym-file" => {
+                            flags.set_symbol_file(false);
+                        }
+
+                        "--verbose-log" => {
+                            flags.set_verbose_log(true);
+                        }
+                        _ => panic!("Error: Expected flags or output file name. "),
+                    }
                 }
             }
             let mut output_file0 = match src_files[0].strip_suffix(".asm") {
@@ -33,18 +78,21 @@ pub fn parse_arguments(args: Vec<String>) {
 
             output_file0.push_str(".obj");
 
-            assemble(src_file0, output_file0, String::new());
+            assemble(src_file0, output_file0, flags);
         }
         "link" => {}
         "load" => {}
         "help" => {}
-        _ => panic!("Invalid argument."),
+        _ => panic!("Error: Invalid argument."),
     }
 }
 
-pub fn assemble(src_file: String, output_file: String, asm_flags: String) {
+pub fn assemble(src_file: String, output_file: String, flags: AssemblerFlags) {
     let mut asm = Assembler::new(&src_file);
+    asm.ignore_case_for_labels(flags.case_insensitive_labels);
+    asm.verbose_log = flags.verbose_log;
     asm.load();
+
     //let result = asm.assemble();
 
     let img = match asm.assemble() {
@@ -56,13 +104,25 @@ pub fn assemble(src_file: String, output_file: String, asm_flags: String) {
         }
     };
 
-    let _ = match load_binary::write_binary_to_file(
-        &format!("{}", output_file),
-        &img,
-    ) {
+    let _ = match load_binary::write_binary_to_file(&format!("{}", output_file), &img) {
         Ok(size) => println!("[OK]\tWrote {size} bytes to {}", output_file),
         Err(e) => panic!("[FAIL]\t{:?}", e),
     };
+
+    if flags.output_symbol_file {
+        let _ = match load_binary::write_symbols_to_file(&format!("{output_file}.sym"), &img) {
+            Ok(_) => {
+                println!(
+                    "[OK]\tWrote {} symbols to {output_file}.sym:",
+                    img.symbol_table.len()
+                );
+                println!("{:>3}\tprivate symbol(s).", img.symbol_table.iter().filter(|s| matches!(s.status, SymbolStatus::Private)).count());
+                println!("{:>3}\texported symbol(s).", img.symbol_table.iter().filter(|s| matches!(s.status, SymbolStatus::Export)).count());
+                println!("{:>3}\timported symbol(s).", img.symbol_table.iter().filter(|s| matches!(s.status, SymbolStatus::Import)).count());
+            }
+            Err(e) => panic!("[FAIL]\t{:?}", e),
+        };
+    }
 }
 
 pub fn link_load_and_execute(src_file: String, link_files: Vec<String>, vm_flags: String) {

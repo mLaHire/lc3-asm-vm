@@ -150,6 +150,8 @@ pub struct Assembler {
     symbol_table: SymbolTable,
     instruction_set: HashMap<String, InstrDef>,
     pub vm: virtual_machine::VirtualMachine,
+    pub case_insensitive_labels: bool,
+    pub verbose_log: bool,
     pub orig: u16,
     end: u16,
 }
@@ -164,12 +166,19 @@ impl Assembler {
             symbol_table: Vec::new(),
             instruction_set: InstructionSet::define_instruction_set(),
             vm: virtual_machine::VirtualMachine::new(),
+            case_insensitive_labels: true,
+            verbose_log: false,
             orig: 0,
             end: 0,
         }
     }
 
+    pub fn ignore_case_for_labels(&mut self, flag: bool) {
+        self.case_insensitive_labels = flag;
+    }
+
     pub fn load(&mut self) {
+        self.vm.debug_enabled = false;
         let file_open_result = File::open(self.file_path.as_str());
 
         let file = match file_open_result {
@@ -194,7 +203,7 @@ impl Assembler {
         self.raw_lines = file_read_result;
         self.processed_lines = self.omit_comments();
         for ln in &self.processed_lines {
-            println!("{:03}\t{}", ln.actual_line, ln.text);
+            //println!("{:03}\t{}", ln.actual_line, ln.text);
         }
         //self.symbol_table = Self::build_symbol_table(&self.processed_lines);
         //println!("Symbol table: {:#?}", self.symbol_table);
@@ -204,6 +213,9 @@ impl Assembler {
         let mut errors = Vec::new();
         let mut img = ExecutableImage::new(self.file_path.clone());
 
+        if self.verbose_log {
+            println!("Tokenizing... ");
+        }
         match self.tokenize() {
             Ok(_) => (),
             Err(e) => errors = [errors, e].concat(),
@@ -213,7 +225,9 @@ impl Assembler {
                 errors = [errors, e].concat();
             }
             Ok(r) => {
-                println!("[ASM] Program\t.ORIG {:x}\t.END{:x}", r.0, r.1);
+                if self.verbose_log {
+                    println!("[ASM] Program\t.ORIG {:x}\t.END{:x}", r.0, r.1);
+                }
                 img.origin = r.0;
             }
         }
@@ -238,9 +252,9 @@ impl Assembler {
             }
         }
         self.adjust_symbols();
-    //    self.resolve_external_symbols(vec![
-    //         /*"src/obj_files/flib.asm.sym",*/ "src/obj_files/stacklib.asm.sym",
-    //     ]);
+        //    self.resolve_external_symbols(vec![
+        //         /*"src/obj_files/flib.asm.sym",*/ "src/obj_files/stacklib.asm.sym",
+        //     ]);
         eprintln!("[ASM] WARNING: not resolving external symbols.");
 
         match self.parse_instructions() {
@@ -313,7 +327,10 @@ impl Assembler {
                 if self
                     .symbol_table
                     .iter()
-                    .find(|&sym| sym.name.eq_ignore_ascii_case(symbol))
+                    .find(|&sym| {
+                        self.case_insensitive_labels && sym.name.eq_ignore_ascii_case(symbol)
+                            || sym.name.eq(symbol)
+                    })
                     .is_some()
                 {
                     errors.push(AsmblrErr::new(
@@ -323,7 +340,10 @@ impl Assembler {
                     let initial_def = self
                         .symbol_table
                         .iter()
-                        .find(|&sym| sym.name.eq_ignore_ascii_case(symbol))
+                        .find(|&sym| {
+                            self.case_insensitive_labels && sym.name.eq_ignore_ascii_case(symbol)
+                                || sym.name.eq(symbol)
+                        })
                         .unwrap();
                     errors.push(AsmblrErr::new(
                         initial_def.src_ln_number,
@@ -343,7 +363,9 @@ impl Assembler {
         if !errors.is_empty() {
             return Err(errors);
         }
-        println!("Symbol table: {:#?}", self.symbol_table);
+        if self.verbose_log {
+            println!("Symbol table: {:#?}", self.symbol_table)
+        };
         Ok(())
     }
 
@@ -365,7 +387,7 @@ impl Assembler {
                 }
             };
 
-            println!("{:02}     {:?}", ln.actual_line, token_stream);
+            //println!("{:02}     {:?}", ln.actual_line, token_stream);
             tokenized_lines.push(TokenizedLine {
                 rel_addr: ln.number,
                 src_ln_number: ln.actual_line,
@@ -430,7 +452,7 @@ impl Assembler {
         for ln in &self.tokenized_lines {
             let token_stream = &ln.tokens;
 
-            println!("{:03}\t{:?}", ln.src_ln_number, token_stream);
+            //println!("{:03}\t{:?}", ln.src_ln_number, token_stream);
 
             for token in token_stream {
                 match token {
@@ -489,7 +511,7 @@ impl Assembler {
                                     }
                                     _ => {}
                                 }
-                                println!("Found origin: {}", { val.value });
+                                //println!("Found origin: {}", { val.value });
 
                                 self.orig = val.value;
                                 found_orig = true;
@@ -550,7 +572,9 @@ impl Assembler {
             }
             symbol.abs_addr = self.orig + symbol.rel_addr;
         }
-        println!("Adjusted symbol table: {:#?}", self.symbol_table);
+        if self.verbose_log {
+            println!("Adjusted symbol table: {:#?}", self.symbol_table)
+        };
     }
 
     pub fn resolve_external_symbols(&mut self, external_files: Vec<&str>) {
@@ -601,7 +625,9 @@ impl Assembler {
             let line_offset = tk_ln.rel_addr;
             let line = match line_.strip_prefix(&[Token::Label(format!(""))]) {
                 Some(without_label) => {
-                    println!("LABEL: {:?}\t", line_.first().unwrap());
+                    if self.verbose_log {
+                        println!("LABEL: {:?}\t", line_.first().unwrap())
+                    };
                     without_label
                 }
                 None => &line_,
@@ -613,7 +639,7 @@ impl Assembler {
                 None => continue,
             } {
                 &Token::Directive(ref directive) => {
-                    println!("Found directive .{directive} {:0x}+{line_offset:0x} 0x{:03x} '{directive}'", self.orig, self.orig + line_offset);
+                    //println!("Found directive .{directive} {:0x}+{line_offset:0x} 0x{:03x} '{directive}'", self.orig, self.orig + line_offset);
                     // if directive != "ORIG"
                     //     && directive != "END"
                     //     && line_offset < (self.end - self.orig/*  - 2*/)
@@ -668,11 +694,13 @@ impl Assembler {
                                             self.orig + line_offset + (i as u16),
                                             ch as u16,
                                         ));
-                                        println!(
-                                            "\t'{}' --> 0x{:04x}",
-                                            std::str::from_utf8(&[ch]).unwrap(),
-                                            self.orig + line_offset + (i as u16)
-                                        );
+                                        if self.verbose_log {
+                                            println!(
+                                                "\t'{}' --> 0x{:04x}",
+                                                std::str::from_utf8(&[ch]).unwrap(),
+                                                self.orig + line_offset + (i as u16)
+                                            );
+                                        }
                                     }
 
                                     //Null term
@@ -680,10 +708,12 @@ impl Assembler {
                                         self.orig + line_offset + (text.bytes().len() as u16),
                                         0,
                                     ));
-                                    println!(
-                                        "\t'/0' --> 0x{:04x}\n",
-                                        self.orig + line_offset + (text.bytes().len() as u16)
-                                    );
+                                    if self.verbose_log {
+                                        println!(
+                                            "\t'/0' --> 0x{:04x}\n",
+                                            self.orig + line_offset + (text.bytes().len() as u16)
+                                        );
+                                    }
                                     reserved_word_count += text.bytes().len() as u16;
                                     for sym in &mut self.symbol_table {
                                         if sym.rel_addr == unadjusted_offset {
@@ -723,7 +753,7 @@ impl Assembler {
                                         memory_writes.push((self.orig + line_offset, 0));
                                     }
 
-                                    println!("Reserving {} words", token.as_u16(None));
+                                    //if self.println!("Reserving {} words", token.as_u16(None));
                                 } else if let Token::Label(text) = token {
                                     match text.trim().parse::<u16>(){
                                         Ok(size_of_block) => {
@@ -734,7 +764,7 @@ impl Assembler {
                                                         sym.size_in_words = size_of_block;
                                                     }
                                                 }
-                                                println!("Reserving {} words", text);
+                                                //println!("Reserving {} words", text);
                                             }
                                         },
                                         Err(_) => {
@@ -775,7 +805,9 @@ impl Assembler {
             return Err(errors);
         }
 
-        println!("MEM_WRITES: {:?}", memory_writes);
+        if self.verbose_log {
+            println!("Memory writes: {:?}", memory_writes)
+        };
         Ok(memory_writes)
     }
 
@@ -919,7 +951,7 @@ impl Assembler {
             };
 
             if line.starts_with(&[Token::Directive(format!(""))]) {
-                println!("Ignoring directive.");
+                //println!("Ignoring directive.");
                 line = line.strip_prefix(&[Token::Directive(format!(""))]).unwrap();
             }
             //Strip annotating directive .EXPORT
@@ -1096,7 +1128,10 @@ impl Assembler {
                             let mut symbol_value: Option<u16> = None;
 
                             for sym in &self.symbol_table {
-                                if sym.name.to_ascii_uppercase() == *lbl.to_ascii_uppercase() {
+                                if (self.case_insensitive_labels
+                                    && sym.name.to_ascii_uppercase() == *lbl.to_ascii_uppercase())
+                                    || sym.name == *lbl
+                                {
                                     symbol_value = Some(
                                         sym.rel_addr, /*add_2s_complement(sym.abs_addr, invert_sign(self.orig))*/
                                     );
@@ -1151,7 +1186,7 @@ impl Assembler {
             }
         }
 
-        println!("Instr: {word:016b}");
+        //println!("Instr: {word:016b}");
         Ok(Some(word))
     }
 }
