@@ -1,6 +1,7 @@
 use crate::assembler::*;
 use assemble::*;
 use console::Term;
+use lc3_asm_vm::parse_arguments;
 use std::path::Path;
 use std::time::Instant;
 pub mod assembler;
@@ -14,33 +15,30 @@ pub mod virtual_machine;
 //
 //fn compile(source_file: &Path, external_symbol_files: Vec<&Path>) {}
 
-
-enum CliRequestType{
-    Assemble, 
+enum CliRequestType {
+    Assemble,
     LinkLoad,
     Flag(String),
 }
 
-struct CliRequest{
-    
-}
-
-
-
-
+struct CliRequest {}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    print!("\nArguments: {args:?}\n");
+    parse_arguments(args);
+}
+
+fn main_obsolete() {
+    let args: Vec<String> = std::env::args().collect();
     print!("Arguments: {args:?}");
     //return;
-    
+
     let putc_x21 = TrapInstruction::new("putc", 0x21);
     let puts_x22 = TrapInstruction::new("puts", 0x22);
     let getc_x23 = TrapInstruction::new("getc", 0x23);
     let halt_x25 = TrapInstruction::new("halt", 0x25);
     let term = Term::stdout();
-
-    
 
     print!("Enter local file path: ./src/asm_files/");
     let buffer = match term.read_line() {
@@ -115,10 +113,7 @@ fn main() {
             &format!("./src/obj_files/{}.obj", buffer),
             &img,
         ) {
-            Ok(size) => println!(
-                "[OK]\tWrote {size} bytes to./src/obj_files/{}.obj ",
-                buffer
-            ),
+            Ok(size) => println!("[OK]\tWrote {size} bytes to./src/obj_files/{}.obj ", buffer),
             Err(e) => panic!("[FAIL]\t{:?}", e),
         };
 
@@ -162,11 +157,9 @@ fn main() {
         };
 
         let symbols =
-            load_binary::read_symbols_from_file(&format!("./src/obj_files/{}.sym", buffer))
-                .expect(&format!(
-                    "Unable to load symbols from ./src/obj_files/{}.sym",
-                    buffer
-                ));
+            load_binary::read_symbols_from_file(&format!("./src/obj_files/{}.sym", buffer)).expect(
+                &format!("Unable to load symbols from ./src/obj_files/{}.sym", buffer),
+            );
         println!("\n\nSYMBOL FILE \n{:#?}", symbols);
     } else {
         println!("Skipping..")

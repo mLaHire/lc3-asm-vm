@@ -176,7 +176,10 @@ impl Assembler {
             Ok(f) => f,
             Err(e) => {
                 //dbg!(e);
-                eprintln!("[ASM]\tFATAL ERROR: Could not open file '{}'.\n", self.file_path);
+                eprintln!(
+                    "[ASM]\tFATAL ERROR: Could not open file '{}'.\n",
+                    self.file_path
+                );
                 panic!("{:?}", e);
             }
         };
@@ -235,9 +238,10 @@ impl Assembler {
             }
         }
         self.adjust_symbols();
-        self.resolve_external_symbols(vec![
-            /*"src/obj_files/flib.asm.sym",*/ "src/obj_files/stacklib.asm.sym",
-        ]);
+    //    self.resolve_external_symbols(vec![
+    //         /*"src/obj_files/flib.asm.sym",*/ "src/obj_files/stacklib.asm.sym",
+    //     ]);
+        eprintln!("[ASM] WARNING: not resolving external symbols.");
 
         match self.parse_instructions() {
             Ok(instructions) => {
@@ -883,18 +887,18 @@ impl Assembler {
             vm.execute(Some(&img.symbol_table));
 
             if !flag_is_set(vm.read_memory(vm.mcr_address), 15) {
-               
                 thread::sleep(time::Duration::from_millis(10));
                 print!("Ending VM instance... ");
                 vm.write_memory(vm.kbsr_address, set_flag_true(0, 14));
                 vm.write_memory(vm.dsr_address, set_flag_true(0, 14));
-                while flag_is_set(vm.read_memory(vm.kbsr_address), 14) || flag_is_set(vm.read_memory(vm.dsr_address), 14){
+                while flag_is_set(vm.read_memory(vm.kbsr_address), 14)
+                    || flag_is_set(vm.read_memory(vm.dsr_address), 14)
+                {
                     //wait for Input server to terminate.
                     print!("Waiting for I/O servers to terminate... \n");
                     thread::sleep(time::Duration::from_millis(100));
-                    
                 }
-               
+
                 print!("Done.\n");
 
                 break;

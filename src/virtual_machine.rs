@@ -220,10 +220,9 @@ impl VirtualMachine {
                     }
                 }
 
-                if binary_utils::flag_is_set((*display).signal, 14){
+                if binary_utils::flag_is_set((*display).signal, 14) {
                     //Kill signal
                     println!("Ending output server...");
-                    
 
                     drop(term);
                     //println!("Ending output server...");
@@ -240,7 +239,6 @@ impl VirtualMachine {
             let mut kill_signal = false;
             //println!("[IO]\tStarting input server.");
             loop {
-                
                 // println!(
                 //     "INPUT: '{}' (ASCII {input_char})",
                 //     char::from_u32(input_char as u32).unwrap()
@@ -271,18 +269,15 @@ impl VirtualMachine {
                     }
                 };
 
-                if binary_utils::flag_is_set((*kb_regs).signal, 14){
+                if binary_utils::flag_is_set((*kb_regs).signal, 14) {
                     //Kill signal
                     term.write_line("Ending input server...").unwrap();
                     kill_signal = true;
-                   
-                   // drop(term);
-                    //println!("Ending output server...");
-                   // (*kb_regs).signal = binary_utils::set_flag_false((*kb_regs).signal, 14);
-                    
-                }
 
-                
+                    // drop(term);
+                    //println!("Ending output server...");
+                    // (*kb_regs).signal = binary_utils::set_flag_false((*kb_regs).signal, 14);
+                }
 
                 if !binary_utils::flag_is_set((*kb_regs).signal, 15) {
                     //println!("[IO]\tChar input recived. KBSR is clear. Updating KBSR and KBDR");
@@ -292,7 +287,6 @@ impl VirtualMachine {
                     //println!("[IO]\tChar input recived. KBSR is NOT clear. Ignoring input.");
                 }
 
-                
                 drop(kb_regs);
                 //println!("[IO] Dropped kb_regs.");
                 thread::sleep(time::Duration::from_millis(2));
