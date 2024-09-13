@@ -23,7 +23,7 @@ The assembler, invoked with `lc3-asm-vm asm` currently supports the following CL
 
 ``` --no-sym-file : no <file>.obj.asm file is generated```
 
-# Running the VM: Linker/Loader
+## Running the VM: Linker/Loader
 This implementation introduces a *linker* to LC-3 assembly. 
 
 Currently the linker operates in two stages: (1) it resolves external addressess using a pre-existing `.sym` listing, 
@@ -52,7 +52,16 @@ and `lib.asm`
 
 ```FUNCTION .EXPORT ADD R0, R1, #3```
 
-### Example: hello_world.asm 
+
+# Getting Started
+1. Install Rust.
+2. Download or clone the repo.
+3. Navigate to the root directory of the install.
+4. Run `cargo build`
+5. Run `lc3-asm-vm`...
+   
+
+###### Example: hello_world.asm 
 
 ```
 ;
@@ -82,7 +91,6 @@ Then to run it on the simulator or virtual machine:
 
 # Approach
 *lc3-asm-vm* is written in Rust, and the only dependency outside of the Rust Standard Library is the `console` crate.
-
 
 
 [^1]: Designed by Y. N. Patt & S. Patel, first described in _Introduction to Computing Systems_ Patt & Patel (2000).
