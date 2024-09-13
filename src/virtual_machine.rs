@@ -150,7 +150,7 @@ impl VirtualMachine {
             registers: Registers::new(),
 
             run: true,
-            debug_enabled: true,
+            debug_enabled: false,
             disasm_enabled: false,
 
             program_counter: PC_START,

@@ -119,13 +119,18 @@ pub fn write_symbols_to_file(
         }
     };
     let mut symbol_count = 0;
-    //file.write(format!(";{:20}\t{:4}\t\t{}\n", "Name","Addr","Status").as_bytes());
+    //file.write(format!(";{:20}\t\t{:4}\t\t{}\n", "Name","Addr","Status").as_bytes());
+    match file.write(format!(";{:20}\t\t{}\t{}\t{}\n", "Symbol name", "Rel Addr", "Abs Addr", "Scope").as_bytes()){
+        Ok(_) => (),
+        Err(_) => return Err(error::FileLoadError::FsWriteFailed)
+    }
 
     //file.write(".SYM".as_bytes()).expect("Error writing header.");
+    
     for symbol in &img.symbol_table {
         file.write(
             format!(
-                "{:20}\t#{:04}\tx{:04x}\t\t{}\n",
+                "{:20}\t\t#{:04}\t\tx{:04x}\t\t{}\n",
                 symbol.name,
                 as_negative_i32(symbol.rel_addr),
                 symbol.abs_addr,
@@ -164,6 +169,10 @@ pub fn read_symbols_from_file(path: &str) -> Result<Vec<assemble::Symbol>, error
     let contents = contents.lines();
     for line in contents.into_iter() {
         //println!("{line}");
+        if line.starts_with(";"){
+            continue;
+        }
+
         let mut tokens = Token::tokenize_str(line);
         //println!("{tokens:?}");
         if tokens.len() != 4 {

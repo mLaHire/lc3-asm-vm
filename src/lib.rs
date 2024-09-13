@@ -1,12 +1,14 @@
 pub mod assembler;
 pub mod binary_utils;
 pub mod error;
-pub mod load_binary;
+pub mod file_io;
 pub mod virtual_machine;
+pub mod cli;
 use std::process::Output;
 
 use assemble::*;
 use assembler::*;
+use error::CliError;
 
 pub struct AssemblerFlags {
     pub case_insensitive_labels: bool,
@@ -39,15 +41,15 @@ impl AssemblerFlags {
     }
 }
 
-pub fn parse_arguments(args: Vec<String>) {
+pub fn parse_arguments(args: Vec<String>) -> Result<(), CliError> {
     if args.len() < 3 {
-        panic!("Too few arguments");
+        return Err(CliError::new("Expected at least 3 arguments"))
     }
 
     //ignore args[0]
 
     match args[1].to_ascii_lowercase().as_str() {
-        "assemble" => {
+        "asm" => {
             let src_files = vec![args[2].clone()];
             let src_file0 = src_files[0].clone(); //Guaranteed to exist
             let mut flags = AssemblerFlags::new();
@@ -70,15 +72,14 @@ pub fn parse_arguments(args: Vec<String>) {
 
                         "--link" => {
                             if arg_no+1 == args.len() {
-                                panic!("Expected files to link.")
+                                return Err(CliError::new("Expected files to link after '--link'"))
                             }
                             for k in arg_no+1..args.len() {
                                 external_files.push(&args[k]);
                             }
                             break;
-                            arg_no = args.len();
                         }
-                        _ => panic!("Error: Expected flags or output file name. "),
+                        _ => return Err(CliError::new("Expected flags or output file name after 'asm'")),
                     }
                 }
             }
@@ -89,7 +90,7 @@ pub fn parse_arguments(args: Vec<String>) {
 
             output_file0.push_str(".obj");
 
-            assemble(src_file0, output_file0, external_files, flags);
+            cli_assemble(src_file0, output_file0, external_files, flags);
         }
         "link" => {}
         "load" => {
@@ -100,14 +101,17 @@ pub fn parse_arguments(args: Vec<String>) {
                 .map(|(i, val)| val)
                 .collect();
 
-            
+            if src_files.len() == 0{ 
+
+            }
         }
         "help" => {}
-        _ => panic!("Error: Invalid argument."),
+        _ => return Err(CliError::new(&format!("Invalid argument '{}'", args[1]))),
     }
+    Ok(())
 }
 
-pub fn assemble(
+pub fn cli_assemble(
     src_file: String,
     output_file: String,
     external_files: Vec<&str>,
@@ -129,13 +133,13 @@ pub fn assemble(
         }
     };
 
-    let _ = match load_binary::write_binary_to_file(&format!("{}", output_file), &img) {
+    let _ = match file_io::write_binary_to_file(&format!("{}", output_file), &img) {
         Ok(size) => println!("[OK]\tWrote {size} bytes to {}", output_file),
         Err(e) => panic!("[FAIL]\t{:?}", e),
     };
 
     if flags.output_symbol_file {
-        let _ = match load_binary::write_symbols_to_file(&format!("{output_file}.sym"), &img) {
+        let _ = match file_io::write_symbols_to_file(&format!("{output_file}.sym"), &img) {
             Ok(_) => {
                 println!(
                     "[OK]\tWrote {} symbols to {output_file}.sym:",

@@ -94,7 +94,7 @@ _pop                    ST          R2, save_r2
                         ;TRAP        x22
         _pop_ret        LD          R2, save_r2
                         RET
-                    
+endl                    .FILL	    #10                    
 stack_start_addr        .FILL       x4000
 stack_min_addr          .FILL	    x3FF1
 stack_max_capacity      .FILL       xF
@@ -105,7 +105,6 @@ msg                     .STRINGZ	"*Stack demo - reversing strings*"
 text                    .STRINGZ	"FILO"
 fwd                     .STRINGZ	"Forwards: "
 rvrs                    .STRINGZ	"Reverse: "
-endl                    .FILL	    #10
 save_r1                 .BLKW       #1
 save_r2                 .BLKW	    #1
     .END

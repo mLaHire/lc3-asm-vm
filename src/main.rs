@@ -7,7 +7,7 @@ use std::time::Instant;
 pub mod assembler;
 pub mod binary_utils;
 pub mod error;
-pub mod load_binary;
+pub mod file_io;
 pub mod virtual_machine;
 
 //
@@ -25,12 +25,15 @@ struct CliRequest {}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    print!("\nArguments: {args:?}\n");
-    if args[1] == "--old"{
+    //print!("\nArguments: {args:?}\n");
+    if args.len() > 1 && args[1] == "--old"{
         main_obsolete();
         return;
     }
-    parse_arguments(args);
+    match parse_arguments(args){
+        Ok(_) => {},
+        Err(cli_error) => cli_error.dipsplay(),
+    }
 }
 
 fn main_obsolete() {
@@ -113,7 +116,7 @@ fn main_obsolete() {
     .contains("y");
 
     if output {
-        let _ = match load_binary::write_binary_to_file(
+        let _ = match file_io::write_binary_to_file(
             &format!("./src/obj_files/{}.obj", buffer),
             &img,
         ) {
@@ -121,9 +124,9 @@ fn main_obsolete() {
             Err(e) => panic!("[FAIL]\t{:?}", e),
         };
 
-        let obj = load_binary::read_binary_from_file(
+        let obj = file_io::read_binary_from_file(
             &format!("./src/obj_files/{}.obj", buffer),
-            load_binary::Endian::Little,
+            file_io::Endian::Little,
         )
         .expect("Unable to open multiply.obj");
         for (index, word) in obj.iter().enumerate() {
@@ -149,7 +152,7 @@ fn main_obsolete() {
     .contains("y");
 
     if output {
-        let _ = match load_binary::write_symbols_to_file(
+        let _ = match file_io::write_symbols_to_file(
             &format!("./src/obj_files/{}.sym", buffer),
             &img,
         ) {
@@ -161,7 +164,7 @@ fn main_obsolete() {
         };
 
         let symbols =
-            load_binary::read_symbols_from_file(&format!("./src/obj_files/{}.sym", buffer)).expect(
+            file_io::read_symbols_from_file(&format!("./src/obj_files/{}.sym", buffer)).expect(
                 &format!("Unable to load symbols from ./src/obj_files/{}.sym", buffer),
             );
         println!("\n\nSYMBOL FILE \n{:#?}", symbols);

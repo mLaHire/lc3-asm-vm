@@ -1,7 +1,8 @@
 use crate::binary_utils::*;
+use crate::error::AsmErrorType;
 use crate::error::AsmblrErr;
 use crate::error::FileLoadError;
-use crate::load_binary::*;
+use crate::file_io::*;
 use crate::tokenizer::*;
 use crate::virtual_machine;
 use core::panic;
@@ -38,7 +39,7 @@ pub struct TrapInstruction {
 
 impl TrapInstruction {
     pub fn new(filename: &str, trap_vector: u16) -> Self {
-        let mut asm = Assembler::new(format!("./src/asm_files/trap/{}.asm", filename).as_str());
+        let mut asm = Assembler::new(format!("src/asm_files/trap/{}.asm", filename).as_str());
         asm.load();
         match asm.tokenize() {
             Ok(_) => (),
@@ -252,7 +253,10 @@ impl Assembler {
             }
         }
         self.adjust_symbols();
-        self.resolve_external_symbols(external_files);
+        if let Err(mut link_errors) = self.resolve_external_symbols(external_files){
+            errors.append(&mut link_errors);
+            return Err(errors);
+        }
         //eprintln!("[ASM] WARNING: not resolving external symbols.");
 
         match self.parse_instructions() {
@@ -273,7 +277,7 @@ impl Assembler {
         }
         img.symbol_table = (self.symbol_table).clone();
 
-        println!("[ASM] Assembled {}.", self.file_path);
+        println!("[ASM] assembled {}.", self.file_path);
 
         Ok(img)
     }
@@ -334,7 +338,7 @@ impl Assembler {
                     .is_some()
                 {
                     errors.push(AsmblrErr::new(
-                        tk_ln.src_ln_number,
+                        Some(tk_ln.src_ln_number),
                         format!("Label '{}' is already defined.", symbol),
                     ));
                     let initial_def = self
@@ -346,7 +350,7 @@ impl Assembler {
                         })
                         .unwrap();
                     errors.push(AsmblrErr::new(
-                        initial_def.src_ln_number,
+                        Some(initial_def.src_ln_number),
                         format!("Label {} is defined again later.", symbol),
                     ))
                 }
@@ -377,7 +381,7 @@ impl Assembler {
                 Ok(tk) => tk,
                 Err(e) => {
                     errors.push(AsmblrErr::new(
-                        ln.actual_line,
+                        Some(ln.actual_line),
                         e,
                         /*  format!(
                         "\nSyntax error ('{}' (line {})):\n\n{:02}\t\t'{}'\n\n\t\t{}",
@@ -460,7 +464,7 @@ impl Assembler {
                         if dir != "ORIG" {
                             if !found_orig {
                                 errors.push(AsmblrErr::new(
-                                    ln.src_ln_number,
+                                    Some(ln.src_ln_number),
                                     format!(
                                     "Expected .ORIG directive. Found directive '.{dir}' instead.",
                                 ),
@@ -472,7 +476,7 @@ impl Assembler {
                             else if dir == "END" {
                                 if found_end {
                                     errors.push(AsmblrErr::new(
-                                        ln.src_ln_number,
+                                        Some(ln.src_ln_number),
                                         format!(".END already defined ({:x}).", self.end),
                                     ));
                                 }
@@ -483,7 +487,7 @@ impl Assembler {
                         } else {
                             if found_orig {
                                 errors.push(AsmblrErr::new(
-                                    ln.src_ln_number,
+                                    Some(ln.src_ln_number),
                                     format!(".ORIG aleady defined ({}).", self.orig),
                                 ));
                             } else {
@@ -497,7 +501,7 @@ impl Assembler {
                     | Token::BinLiteral(val) => {
                         if !expecting_origin_value_next && !found_orig {
                             errors.push(AsmblrErr::new(
-                                ln.src_ln_number,
+                                Some(ln.src_ln_number),
                                 format!("Not expecting decimal literal."),
                             ));
                         } else {
@@ -505,7 +509,7 @@ impl Assembler {
                                 match val.sign {
                                     Sign::MINUS => {
                                         errors.push(AsmblrErr::new(
-                                            ln.src_ln_number,
+                                            Some(ln.src_ln_number),
                                             format!(".ORIG must be set to a positive value."),
                                         ));
                                     }
@@ -523,7 +527,7 @@ impl Assembler {
                     _ => {
                         if expecting_origin_value_next {
                             errors.push(AsmblrErr::new(
-                                ln.src_ln_number,
+                                Some(ln.src_ln_number),
                                 format!(
                                     "Found .ORIG directive, but no value is assigned as origin."
                                 ),
@@ -536,11 +540,11 @@ impl Assembler {
         }
 
         if !found_orig {
-            errors.push(AsmblrErr::new(1, format!("Unable to find program .ORIG")));
+            errors.push(AsmblrErr::new(None, format!("Unable to find program .ORIG")));
         }
 
         if !found_end {
-            errors.push(AsmblrErr::new(1, format!("Unable to find program.END")));
+            errors.push(AsmblrErr::new(None, format!("Unable to find program .END")));
         }
 
         if !errors.is_empty() {
@@ -550,17 +554,18 @@ impl Assembler {
         Ok((self.orig, self.end))
     }
 
-    pub fn parse_directives(&mut self) {
+    pub fn parse_directives(&mut self) -> Result<(), Vec<AsmblrErr>>{
         let parsed = match self.parse_directives_to_list() {
             Ok(parsed) => parsed,
             Err(errors) => {
                 AsmblrErr::display(&self.file_path, &self.raw_lines, &errors);
-                panic!("Unable to parse directives.");
+                return Err(errors);
             }
         };
         for (addr, val) in parsed.iter() {
             self.vm.write_memory(*addr, *val);
         }
+        Ok(())
     }
 
     pub fn adjust_symbols(&mut self) {
@@ -577,7 +582,9 @@ impl Assembler {
         };
     }
 
-    pub fn resolve_external_symbols(&mut self, external_files: Vec<&str>) {
+    pub fn resolve_external_symbols(&mut self, external_files: Vec<&str>) -> Result<(), Vec<AsmblrErr>>{
+        let mut errors: Vec<AsmblrErr> = vec![];
+
         if self.verbose_log{
             println!("Resolving symbols from external files: {:?}", external_files);
         }
@@ -599,7 +606,10 @@ impl Assembler {
             let resolution = match external_tables.iter().find(|external| {
                 matches!(external.status, SymbolStatus::Export) && external.name == internal.name
             }) {
-                None => panic!("Unable to resolve import for symbols {}.", internal.name),
+                None => {
+                    errors.push(AsmblrErr::new(None, format!("Unable to resolve import for symbol '{}'", internal.name)).link_error().clone());
+                    continue;
+                }
                 Some(external) => external.abs_addr,
             };
             internal.abs_addr = resolution;
@@ -619,6 +629,12 @@ impl Assembler {
 
             
         }
+
+        if !errors.is_empty(){
+            return Err(errors)
+        }
+
+        Ok(())
     }
     pub fn parse_directives_to_list(&mut self) -> Result<Vec<(u16, u16)>, Vec<AsmblrErr>> {
         let mut memory_writes = Vec::new();
@@ -672,7 +688,7 @@ impl Assembler {
                                         .push((self.orig + line_offset, token.as_u16(None)));
                                 } else {
                                     errors.push(AsmblrErr::new(
-                                        tk_ln.src_ln_number,
+                                        Some(tk_ln.src_ln_number),
                                         format!(
                                             "expected a number after .FILL directive, found {:?}",
                                             token
@@ -681,7 +697,7 @@ impl Assembler {
                                 }
                             }
                             None => errors.push(AsmblrErr::new(
-                                tk_ln.src_ln_number,
+                                Some(tk_ln.src_ln_number),
                                 format!("expected a number after .FILL directive, found nothing"),
                             )),
                         }
@@ -729,7 +745,7 @@ impl Assembler {
                                     }
                                 } else {
                                     errors.push(AsmblrErr::new(
-                                        tk_ln.src_ln_number,
+                                        Some(tk_ln.src_ln_number),
                                         format!(
                                             "expected a string literal after .STRINGZ directive, found {:?}",
                                             token
@@ -775,7 +791,7 @@ impl Assembler {
                                             }
                                         },
                                         Err(_) => {
-                                            errors.push(AsmblrErr { line_number: tk_ln.src_ln_number, msg: format!("Expected a valid number decimal number after directive .BLKW, found '{text}'")})
+                                            errors.push(AsmblrErr::new( Some(tk_ln.src_ln_number), format!("Expected a valid number decimal number after directive .BLKW, found '{text}'")))
                                         }
                                     }
                                 }
@@ -977,7 +993,7 @@ impl Assembler {
                         instructions.push(word);
                     }
                 },
-                Err(msg) => errors.push(AsmblrErr::new(tk_ln.src_ln_number, msg)),
+                Err(msg) => errors.push(AsmblrErr::new(Some(tk_ln.src_ln_number), msg)),
             }
         }
 
