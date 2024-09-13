@@ -1,7 +1,7 @@
 use crate::assembler::*;
 use assemble::*;
 use console::Term;
-use lc3_asm_vm::parse_arguments;
+use lc3_asm_vm::{parse_arguments, TRAP_DIR_PATH};
 use std::path::Path;
 use std::time::Instant;
 pub mod assembler;
@@ -41,10 +41,10 @@ fn main_obsolete() {
     //print!("Arguments: {args:?}");
     //return;
 
-    let putc_x21 = TrapInstruction::new("putc", 0x21);
-    let puts_x22 = TrapInstruction::new("puts", 0x22);
-    let getc_x23 = TrapInstruction::new("getc", 0x23);
-    let halt_x25 = TrapInstruction::new("halt", 0x25);
+    let putc_x21 = TrapInstruction::new(TRAP_DIR_PATH, "putc", 0x21);
+    let puts_x22 = TrapInstruction::new(TRAP_DIR_PATH, "puts", 0x22);
+    let getc_x23 = TrapInstruction::new(TRAP_DIR_PATH, "getc", 0x23);
+    let halt_x25 = TrapInstruction::new(TRAP_DIR_PATH, "halt", 0x25);
     let term = Term::stdout();
 
     print!("Enter local file path: ./src/asm_files/");

@@ -31,21 +31,21 @@ pub struct Symbol {
 }
 
 pub struct TrapInstruction {
-    instructions: Vec<u16>,
-    origin: u16,
-    trap_vector: u16,
-    memory_writes: Vec<(u16, u16)>,
+    pub instructions: Vec<u16>,
+    pub origin: u16,
+    pub trap_vector: u16,
+    pub memory_writes: Vec<(u16, u16)>,
 }
 
 impl TrapInstruction {
-    pub fn new(filename: &str, trap_vector: u16) -> Self {
-        let mut asm = Assembler::new(format!("src/asm_files/trap/{}.asm", filename).as_str());
+    pub fn new(trap_dir_path: &str, filename: &str, trap_vector: u16) -> Self {
+        let mut asm = Assembler::new(format!("{}{}.asm", trap_dir_path, filename).as_str());
         asm.load();
         match asm.tokenize() {
             Ok(_) => (),
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!("./src/asm_files/trap/{}.asm", filename),
+                    &format!("{}{}.asm", trap_dir_path, filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -55,19 +55,19 @@ impl TrapInstruction {
         match asm.parse_origin_and_end() {
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!("./src/asm_files/trap/{}.asm", filename),
+                    &format!("{}{}.asm", trap_dir_path, filename),
                     &asm.raw_lines,
                     &errors,
                 );
                 panic!();
             }
-            Ok(r) => println!("TRAP Program\t.ORIG {:x}\t.END{:x}", r.0, r.1),
+            Ok(r) => ()/*println!("TRAP Program\t.ORIG {:x}\t.END{:x}", r.0, r.1)*/,
         };
 
         match asm.load_symbols() {
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!("./src/asm_files/trap/{}.asm", filename),
+                    &format!("{}{}.asm", trap_dir_path, filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -80,7 +80,7 @@ impl TrapInstruction {
             Ok(writes) => writes,
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!("./src/asm_files/trap/{}.asm", filename),
+                    &format!("{}{}.asm", trap_dir_path, filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -94,7 +94,7 @@ impl TrapInstruction {
             Ok(writes) => writes,
             Err(errors) => {
                 AsmblrErr::display(
-                    &format!("./src/asm_files/trap/{}.asm", filename),
+                    &format!("{}{}.asm", trap_dir_path, filename),
                     &asm.raw_lines,
                     &errors,
                 );
@@ -122,7 +122,7 @@ pub struct MemoryWrite {
     pub value: u16,
 }
 
-pub struct ExecutableImage {
+pub struct ExecutableImageOut {
     pub name: String,
     pub origin: u16,
     pub instructions: Vec<MemoryWrite>,
@@ -130,9 +130,54 @@ pub struct ExecutableImage {
     pub symbol_table: Vec<Symbol>,
 }
 
-impl ExecutableImage {
+pub struct ExecutableImageIn{
+    pub origin: u16,
+    pub data: Vec<u16>,
+}
+
+impl ExecutableImageIn{
+    pub fn from_binary(binary: Vec<u16>) -> Result<Self, FileLoadError>{
+        if binary.len() <= 1{
+            return Err(FileLoadError::InvalidBinary);
+        }
+
+        let mut binary = binary.clone();
+        let data = binary.split_off(1);
+        Ok(Self { origin: binary[0], data})
+    }
+
+    fn range(&self) -> (u16, u16){
+        (self.origin, self.origin + self.data.len() as u16 -1)
+    }
+
+    fn ranges_overlaps((min1, max1): (u16, u16), (min2, max2): (u16, u16)) -> bool{
+        !((min1 < min2  && max1 < min2) || (min1 > max2 && max1 > max2))
+    }
+
+    pub fn images_overlap(images: &Vec<ExecutableImageIn>) -> Option<((u16, u16), (u16, u16))>{
+        if images.len() < 2{
+            return None
+        }
+
+        let ranges: Vec<(u16, u16)> = images.iter().map(|img| img.range()).collect();
+        // let mut temp = ranges.clone();
+
+        //let mut i = 1;
+
+        for i in 0..ranges.len(){
+            for j in i+1 .. ranges.len(){
+                if Self::ranges_overlaps(ranges[i], ranges[j]){
+                    return Some((ranges[i], ranges[j]));
+                }
+            }
+        }
+        None
+    }
+}
+
+impl ExecutableImageOut {
     pub fn new(name: String) -> Self {
-        ExecutableImage {
+        ExecutableImageOut {
             name: name.clone(),
             origin: 0,
             instructions: Vec::new(),
@@ -140,6 +185,16 @@ impl ExecutableImage {
             symbol_table: Vec::new(),
         }
     }
+
+    // fn get_memory_span(&self) -> (u16, u16){
+    //     let (mut min, mut max) = (0, 0);
+
+    //     min = self.origin; // Check later if this is valid
+    //     for data in &self.data{
+    //         let max 
+    //     }
+    //     (min, max)
+    // }
 }
 
 pub struct Assembler {
@@ -210,9 +265,9 @@ impl Assembler {
         //println!("Symbol table: {:#?}", self.symbol_table);
     }
 
-    pub fn assemble(&mut self, external_files: Vec<&str>) -> Result<ExecutableImage, Vec<AsmblrErr>> {
+    pub fn assemble(&mut self, external_files: Vec<&str>) -> Result<ExecutableImageOut, Vec<AsmblrErr>> {
         let mut errors = Vec::new();
-        let mut img = ExecutableImage::new(self.file_path.clone());
+        let mut img = ExecutableImageOut::new(self.file_path.clone());
 
         if self.verbose_log {
             println!("Tokenizing... ");
@@ -859,7 +914,7 @@ impl Assembler {
 
     pub fn link_then_execute(
         &mut self,
-        img: &ExecutableImage,
+        img: &ExecutableImageOut,
         link_object_files: Option<Vec<&str>>,
         trap_instructions: Option<Vec<TrapInstruction>>,
     ) {

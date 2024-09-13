@@ -4,11 +4,17 @@ pub mod error;
 pub mod file_io;
 pub mod virtual_machine;
 pub mod cli;
-use std::process::Output;
+use std::{process::Output, thread, time};
 
 use assemble::*;
 use assembler::*;
+use binary_utils::*;
+use file_io::*;
+use virtual_machine::*;
 use error::CliError;
+
+
+pub const TRAP_DIR_PATH: &str = "/home/makec/software/rust/lc-3/asm_vm/lc3-asm-vm/src/asm_files/trap/";
 
 pub struct AssemblerFlags {
     pub case_insensitive_labels: bool,
@@ -102,8 +108,12 @@ pub fn parse_arguments(args: Vec<String>) -> Result<(), CliError> {
                 .collect();
 
             if src_files.len() == 0{ 
-
+                return Err(CliError::new(&format!("Expected files to load after 'load'")));
             }
+
+            let link_files = src_files.split_off(1);
+
+            cli_link_load_and_execute(src_files[0], link_files, None);
         }
         "help" => {}
         _ => return Err(CliError::new(&format!("Invalid argument '{}'", args[1]))),
@@ -172,10 +182,96 @@ pub fn cli_assemble(
     }
 }
 
-pub fn link_load_and_execute(src_file: String, link_files: Vec<String>, vm_flags: String) {
+pub fn cli_link_load_and_execute(src_file: &str, link_files: Vec<&String>, vm_flags: Option<bool>) {
     // Set up VM context
+    let verbose_log = false;
+    
 
     //Load trap files according to config
+    let putc_x21 = TrapInstruction::new(TRAP_DIR_PATH, "putc", 0x21);
+    let puts_x22 = TrapInstruction::new(TRAP_DIR_PATH, "puts", 0x22);
+    let getc_x23 = TrapInstruction::new(TRAP_DIR_PATH, "getc", 0x23);
+    let halt_x25 = TrapInstruction::new(TRAP_DIR_PATH, "halt", 0x25);
 
-    //Modify executable
+    let mut trap_instructions = vec![putc_x21, puts_x22, getc_x23, halt_x25];
+
+    //load files
+    let src_img = match read_exectuable_img_from_file(&src_file, Endian::Little){
+        Err(e) => {
+            eprintln!("Error loading executable image '{}', {e:?}", src_file);
+            return;
+        }
+        Ok(img) => img,
+    };
+
+    let mut executable_images = vec![src_img];
+
+    for link_file in link_files{
+        let img = match read_exectuable_img_from_file(&link_file, Endian::Little){
+            Err(e) => {
+                eprintln!("Error linking executable image '{}', {e:?}", src_file);
+                return;
+            }
+            Ok(img) => img,
+        }; 
+        executable_images.push(ExecutableImageIn{
+            data: img.data,
+            origin: img.origin,
+        });
+    }
+
+    if  let Some(((min1, max1), (min2, max2))) = ExecutableImageIn::images_overlap(&executable_images){
+        eprintln!("Error linking executable images, images have overlapping memory locations:\t [0x{:04}, 0x{:04}] and [0x{:04}, 0x{:04}]", min1, max1, min2, max2);
+        return;
+    }
+
+    let mut ctx = VirtualMachine::new();
+    ctx.set_program_origin(executable_images[0].origin);
+    
+    for trap in trap_instructions {
+        ctx.write_memory(trap.trap_vector, trap.origin);
+        // println!(
+        //     "Trap vector: 0x{:x}, value: 0x:{:x} ",
+        //     trap.trap_vector, trap.origin
+        // );
+        for (addr, val) in trap.memory_writes {
+            ctx.write_memory(addr, val);
+        }
+        ctx.load_binary_into_memory(trap.instructions, trap.origin);
+    }
+
+    for img in executable_images{
+        for (rel_addr, word) in img.data.iter().enumerate(){
+            ctx.write_memory(img.origin+rel_addr as u16 , *word);
+            println!("0x{:04x} <- {:016b}", img.origin+rel_addr as u16, word);
+        }
+    }
+
+    ctx.run_io_thread();
+    thread::sleep(time::Duration::from_millis(50));
+    loop {
+        ctx.fetch();
+        ctx.decode();
+        ctx.execute(None); //IF IMPORT SYMBOL TABLE
+
+        if !flag_is_set(ctx.read_memory(ctx.mcr_address), 15) {
+            thread::sleep(time::Duration::from_millis(10));
+            print!("Ending ctx instance... ");
+            ctx.write_memory(ctx.kbsr_address, set_flag_true(0, 14));
+            ctx.write_memory(ctx.dsr_address, set_flag_true(0, 14));
+            print!("Press any key to exit...");
+            while flag_is_set(ctx.read_memory(ctx.kbsr_address), 14)
+                || flag_is_set(ctx.read_memory(ctx.dsr_address), 14)
+            {
+                //wait for Input server to terminate.
+                
+                thread::sleep(time::Duration::from_millis(10));
+            }
+
+            print!("Done.\n");
+
+            break;
+        }
+        //Term::stdout().read_char();
+    }
 }
