@@ -324,10 +324,14 @@ impl Assembler {
     pub fn load_symbols(&mut self) -> Result<(), Vec<AsmblrErr>> {
         let mut errors = Vec::new();
         self.omit_empty_lines();
+        
+
         for tk_ln in &self.tokenized_lines {
-            let token_stream = &tk_ln.tokens;
+            let mut token_stream = tk_ln.tokens.clone();
+            let mut token_stream = token_stream.iter_mut();
             let relative_address = tk_ln.rel_addr;
-            if let Token::Label(symbol) = token_stream.first().unwrap() {
+            let mut found_symbol = false;
+            if let Token::Label(symbol) = token_stream.next().unwrap() {
                 if self
                     .symbol_table
                     .iter()
@@ -362,6 +366,23 @@ impl Assembler {
                     size_in_words: 1,
                     status: SymbolStatus::Private,
                 });
+                found_symbol = true;
+            }
+       
+            //Now check for invalid sequences after the label
+            if found_symbol {
+                if let Some(next) = token_stream.next(){
+                    match next{
+                        Token::Instruction(_) |Token::Directive(_) => continue,
+                        _ => {
+                            errors.push(AsmblrErr::new(
+                                Some(tk_ln.src_ln_number),
+                                format!("Unexpected {next:?} after label declaration."),
+                            ));
+                        }
+                    }
+                }
+
             }
         }
         if !errors.is_empty() {
@@ -391,7 +412,9 @@ impl Assembler {
                 }
             };
 
-            //println!("{:02}     {:?}", ln.actual_line, token_stream);
+            if self.verbose_log{
+                println!("{:02}\t{:?}", ln.actual_line, token_stream);
+            }
             tokenized_lines.push(TokenizedLine {
                 rel_addr: ln.number,
                 src_ln_number: ln.actual_line,
