@@ -1,5 +1,5 @@
 [package]
-name = "LC-3"
+name = "lc3-asm-vm"
 version = "0.1.0"
 edition = "2021"
 

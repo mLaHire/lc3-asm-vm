@@ -1,6 +1,8 @@
 use crate::assemble::Param;
 use crate::binary_utils::*;
 use core::panic;
+
+use super::assemble;
 //use std::thread::current;
 
 #[derive(Clone)]
@@ -338,7 +340,7 @@ impl Token {
                                     }
                                 }
                                 //Instruction
-                                else if crate::is_instruction(text) {
+                                else if assemble::is_instruction(text) {
                                     token_stream.push(Self::Instruction(text.clone()));
                                 }
                                 //Label

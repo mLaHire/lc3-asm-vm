@@ -1,4 +1,4 @@
-                    .ORIG       x3600
+                    .ORIG       x3020
                     LEA         R7, static_exit
 $float  .EXPORT     ST          R7, SAVE_R7
                     LEA         R0, msg

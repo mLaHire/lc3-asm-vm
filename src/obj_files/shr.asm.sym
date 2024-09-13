@@ -1,4 +1,4 @@
-check_for_fn        	#0010	x300a		0
+.SYMcheck_for_fn        	#0010	x300a		0
 fn                  	#0018	x3012		0
 no_fn               	#0020	x3014		0
 shr_done            	#0022	x3016		0
