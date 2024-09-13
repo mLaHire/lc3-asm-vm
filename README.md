@@ -13,7 +13,7 @@ This implementation also incorporates some of the extensions introduced by F. Si
 
 ## Assembler 
 The _assembler_ produces `.obj` and `.sym` files, which can then be fed into the _virtual machine_. 
-The `.obj` files produced appear to be compatible with some other virtual machines [^5][^6].
+The `.obj` files, which are machine code binaries, appear to be compatible with some other virtual machines [^5][^6].
 
 The assembler, invoked with `lc3-asm-vm asm` currently supports the following CLI flags:
 
