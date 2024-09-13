@@ -19,7 +19,7 @@ The assembler, invoked with `lc3-asm-vm asm` currently supports the following CL
 
 ``` --verbose-log : outputs internal details about assembly process ```
 
-``` --case-sensitivive : makes labels case sensitive, closer to original spec [^1]```
+``` --case-sensitivive : makes labels case sensitive, closer to original spec```
 
 ``` --no-sym-file : no <file>.obj.asm file is generated```
 
