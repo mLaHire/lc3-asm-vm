@@ -14,7 +14,6 @@ use virtual_machine::*;
 use error::CliError;
 
 
-pub const TRAP_DIR_PATH: &str = "/home/makec/software/rust/lc-3/asm_vm/lc3-asm-vm/src/asm_files/trap/";
 
 pub struct AssemblerFlags {
     pub case_insensitive_labels: bool,
