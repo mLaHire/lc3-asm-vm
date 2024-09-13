@@ -13,6 +13,7 @@ use file_io::*;
 use virtual_machine::*;
 use error::CliError;
 
+pub const TRAP_DIR_PATH: &str = "trap/";
 
 
 pub struct AssemblerFlags {
