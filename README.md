@@ -39,7 +39,7 @@ produces `prog.obj` with the correct external addresses. Then, at runtime [^7], 
 
 ```lc3-asm-vm prog.obj lib.obj``` 
 
-to start a virtual machine instance, load both object files into the memomory and set the program counter to the start address of prog.obj. 
+to start a virtual machine instance, load both object files into the memory and set the program counter to the start address of prog.obj. 
 
 ## Linker: assembly syntax
 In assembly, labels are marked for import/export by putting the `.IMPORT` and `.EXPORT` directives immediately after the label.
