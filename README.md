@@ -1,5 +1,5 @@
 # Overview
-This project provides an assembler and virtual machine for the educational _LC-3_ 16-bit archictechture, originally designed by Patt and Petel [^1]. 
+This project provides an assembler and virtual machine for the educational _LC-3_ 16-bit archictechture, originally designed by Patt and Patel [^1]. 
 
 ## Specification
 This implementation covers most, but not _all_ of the specification [^2]. Including,
