@@ -90,7 +90,10 @@ Then to run it on the simulator or virtual machine:
 
 
 # Approach
-*lc3-asm-vm* is written in Rust, and the only dependency outside of the Rust Standard Library is the `console` crate.
+*lc3-asm-vm* is written in Rust, and the only dependency outside of the Rust Standard Library is the `console` crate. However, as it stands, external libraries for, e.g., config file loading and CLI argument parsing would provide more functionality with less effort. 
+
+At the same time, I wrote this project with the goal of learning about CPU/IS architechture, Rust, assembly and assemblers/compilers.  There are design decisions that could be improved on, especially concerning the tokenizer and parser. But the process of finding solutions, even if they are not the *ideal* solution, cements learning in a way that just implementing or leveraging existing solutions almost never can.
+
 
 
 [^1]: Designed by Y. N. Patt & S. Patel, first described in _Introduction to Computing Systems_ Patt & Patel (2000).
